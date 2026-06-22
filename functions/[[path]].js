@@ -1,8 +1,48 @@
-// functions/[[path]].js - Cloudflare Pages Functions 版
+// ============================================
+// 画像プロキシ（CORS回避＋キャッシュ）
+// ============================================
+async function getImage(request) {
+  const url = new URL(request.url);
+  const imageUrl = url.searchParams.get('url');
 
+  if (!imageUrl) {
+    return new Response('Missing url parameter', { status: 400 });
+  }
+
+  // 画像を取得（リファラーを偽装）
+  const response = await fetch(imageUrl, {
+    headers: {
+      'Referer': 'https://sres.shengtiangames.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+  });
+
+  if (!response.ok) {
+    return new Response('Image not found', { status: 404 });
+  }
+
+  // CORSヘッダーを追加して返却
+  const headers = new Headers(response.headers);
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Cache-Control', 'public, max-age=86400');
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: headers
+  });
+}
+
+// ============================================
+// メイン関数
+// ============================================
 export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
+
+  // 画像プロキシルート（/image?url=...）
+  if (url.pathname === '/image') {
+    return await getImage(request);
+  }
 
   // -----------------------------
   // クエリパラメータ
@@ -93,6 +133,9 @@ export async function onRequest(context) {
     latestData = [];
   }
 
+  // -----------------------------
+  // デバッグ
+  // -----------------------------
   if (debug) {
     return new Response(JSON.stringify({
       selected_week: listId,
@@ -111,7 +154,7 @@ export async function onRequest(context) {
   }
 
   // -----------------------------
-  // メタスコア計算
+  // メタスコア計算（非線形強調版 + 相乗効果）
   // -----------------------------
   function calcStats(arr) {
     const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -149,6 +192,9 @@ export async function onRequest(context) {
     return { ...d, metaScore: meta };
   });
 
+  // -----------------------------
+  // ソート
+  // -----------------------------
   const sorted = dataWithMeta.sort((a, b) => {
     let valA, valB;
     if (mode === 'meta_score') {
@@ -163,15 +209,22 @@ export async function onRequest(context) {
 
   const toggleOrder = order === "asc" ? "desc" : "asc";
 
+  // -----------------------------
+  // セレクトボックス
+  // -----------------------------
   const weekOptions = weeks.map(w => {
     const selected = w.id === activeWeek.id ? 'selected' : '';
     const label = `#${w.id} ${w.name || ''}`;
     return `<option value="${w.id}" ${selected}>${label}</option>`;
   }).join("");
 
+  // -----------------------------
+  // テーブル行（画像プロキシ経由）
+  // -----------------------------
   const rows = sorted.map((x, i) => {
     const r = x.role || {};
     const iconUrl = r.avatar_link || "";
+    const proxyUrl = `/image?url=${encodeURIComponent(iconUrl)}`;
     const metaScore = x.metaScore || 0;
     const displayMeta = Math.round(metaScore * 100);
     const metaClass = metaScore < 0 ? 'meta-negative' : 'meta';
@@ -181,7 +234,7 @@ export async function onRequest(context) {
         <td>
           <div class="char">
             <span>${r.name_jp || r.english_name || "不明"}</span>
-            <img src="${iconUrl}" loading="lazy" decoding="async" onerror="this.src='https://via.placeholder.com/44/4a6cff/ffffff?text=?'">
+            <img src="${proxyUrl}" loading="lazy" decoding="async" onerror="this.src='https://via.placeholder.com/44/4a6cff/ffffff?text=?'">
           </div>
         </td>
         <td class="win">${x.win_rate ?? "-"}%</td>
@@ -192,6 +245,9 @@ export async function onRequest(context) {
     `;
   }).join("");
 
+  // -----------------------------
+  // エクスポートスクリプト
+  // -----------------------------
   const exportScript = `
   <script>
     function getTableData() {
@@ -270,6 +326,9 @@ export async function onRequest(context) {
   </script>
   `;
 
+  // -----------------------------
+  // HTMLレスポンス
+  // -----------------------------
   return new Response(`
 <!DOCTYPE html>
 <html>
