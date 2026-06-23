@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 修正済み exportScript（正しいZoomオプション）
+  // 修正済み exportScript（正しいZoomオプション構造）
   // ============================================
   const exportScript = `
   <script>
@@ -527,7 +527,7 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // ★ 修正: 正しいズームオプション構造（Chart.js 3.x + Zoom 1.x）
+        // ★ 正しい構造（pan と zoom を分離）
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -620,22 +620,24 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ 正しい構造
+              // ★ ここが正しい
               zoom: {
-                enabled: true,
-                mode: 'xy',
-                limits: {
-                  x: { minRange: 1, max: 16 },
-                  y: { minRange: 5, max: 100 }
-                },
                 pan: {
                   enabled: true,
                   mode: 'xy',
-                  modifierKey: null   // ← 修飾キーなしでドラッグ可能
+                  modifierKey: null   // 修飾キーなしでドラッグ
                 },
-                wheel: {
+                zoom: {
                   enabled: true,
-                  speed: 0.05
+                  mode: 'xy',
+                  wheel: {
+                    enabled: true,
+                    speed: 0.05
+                  },
+                  limits: {
+                    x: { minRange: 1, max: 16 },
+                    y: { minRange: 5, max: 100 }
+                  }
                 }
               }
             },
@@ -654,9 +656,8 @@ export async function onRequest(context) {
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with correct zoom options');
-        console.log('Zoom limits:', historyChartInstance.options.plugins.zoom.limits);
-        console.log('Pan modifierKey:', historyChartInstance.options.plugins.zoom.pan.modifierKey);
+        console.log('Chart rendered with correct zoom structure');
+        console.log('Zoom options:', historyChartInstance.options.plugins.zoom);
       }
 
       loadLibraries();
