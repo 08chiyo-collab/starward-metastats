@@ -321,8 +321,16 @@ export async function onRequest(context) {
     `;
   }).join("");
 
+  // ============================================
+  // ★ 修正済み exportScript ★
+  // ============================================
   const exportScript = `
   <script>
+    // ========================
+    // サーバーサイドから weekName を渡す
+    // ========================
+    const weekName = ${JSON.stringify(weekName)};
+
     // ========================
     // テーブルデータ取得（エクスポート用）
     // ========================
@@ -462,7 +470,8 @@ export async function onRequest(context) {
       const labels = filteredData.map(d => {
         const parts = d.week.split(' - ');
         if (parts.length === 2) {
-          return parts[0].replace(/\\/g, '/');
+          // ★ 正規表現を修正
+          return parts[0].replace(/\\\\/g, '/');
         }
         return d.week;
       });
