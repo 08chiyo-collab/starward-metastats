@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 修正版（ズーム無効化 + Y軸固定 -200〜1000）
+  // exportScript（Y軸固定 -50〜150, X軸ホイールズーム, 水平スクロール）
   // ============================================
   const exportScript = `
   <script>
@@ -477,6 +477,9 @@ export async function onRequest(context) {
       const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
+      // チャートの幅をデータ点数に応じて設定（1点あたり80px）
+      const chartWidth = Math.max(800, labels.length * 80);
+
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
@@ -496,6 +499,28 @@ export async function onRequest(context) {
           const s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
+            loadZoomPlugin();
+          };
+          document.head.appendChild(s);
+        } else {
+          loadZoomPlugin();
+        }
+      }
+
+      function loadZoomPlugin() {
+        if (typeof ChartZoom === 'undefined') {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
+          s.onload = function() {
+            console.log('ChartZoom 2.0.1 loaded');
+            if (typeof Chart !== 'undefined') {
+              Chart.register(ChartZoom);
+              console.log('ChartZoom registered');
+            }
+            renderChart();
+          };
+          s.onerror = function() {
+            console.warn('ChartZoom load failed');
             renderChart();
           };
           document.head.appendChild(s);
@@ -505,7 +530,13 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // ★ ズームプラグインを完全に削除し、Y軸を -200〜1000 に固定
+        // チャートのキャンバス要素に width を設定（スクロール用）
+        const canvas = document.getElementById('historyChart');
+        if (canvas) {
+          canvas.style.width = chartWidth + 'px';
+          canvas.style.height = '100%';
+        }
+
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -597,8 +628,20 @@ export async function onRequest(context) {
                   }
                   return value.toFixed(1);
                 }
+              },
+              zoom: {
+                pan: { enabled: false },    // ← ドラッグ無効
+                zoom: {
+                  wheel: {
+                    enabled: true,
+                    speed: 0.05
+                  },
+                  mode: 'x',                // ← X軸のみズーム
+                  limits: {
+                    x: { minRange: 1, max: 16 }  // 最小1週、最大16週表示
+                  }
+                }
               }
-              // ★ zoom プラグインは削除（無効化）
             },
             scales: {
               x: {
@@ -606,8 +649,8 @@ export async function onRequest(context) {
                 grid: { color: 'rgba(255,255,255,0.05)' }
               },
               y: {
-                min: -200,   // ★ 固定下限
-                max: 1000,   // ★ 固定上限
+                min: -50,                  // ← Y軸下限固定
+                max: 150,                  // ← Y軸上限固定
                 ticks: { color: '#ffffff' },
                 grid: { color: 'rgba(255,255,255,0.05)' }
               }
@@ -615,7 +658,8 @@ export async function onRequest(context) {
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with Y axis fixed -200 to 1000 (zoom disabled)');
+
+        console.log('Chart rendered: Y axis fixed -50~150, X zoom enabled, pan disabled');
       }
 
       loadLibraries();
@@ -871,6 +915,18 @@ button:hover {
   margin: 10px 0 20px;
 }
 
+/* ===== スクロール用コンテナ ===== */
+.scroll-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+}
+.scroll-wrapper canvas {
+  display: block;
+  height: 100%;
+}
+
 #historyModal {
   display: none;
   position: fixed;
@@ -920,6 +976,7 @@ button:hover {
 #historyModal .chart-container {
   position: relative;
   height: 320px;
+  overflow: hidden;
 }
 #historyModal .loading-text {
   text-align: center;
@@ -1009,7 +1066,9 @@ button:hover {
     </div>
     <div class="chart-container">
       <div class="loading-text" id="historyLoading">⏳ データを読み込み中...</div>
-      <canvas id="historyChart" style="display:none;"></canvas>
+      <div class="scroll-wrapper" id="scrollWrapper">
+        <canvas id="historyChart" style="display:none;"></canvas>
+      </div>
     </div>
   </div>
 </div>
