@@ -9,7 +9,6 @@ async function getImage(request) {
     return new Response('Missing url parameter', { status: 400 });
   }
 
-  // 画像を取得（リファラーを偽装）
   const response = await fetch(imageUrl, {
     headers: {
       'Referer': 'https://sres.shengtiangames.com/',
@@ -21,7 +20,6 @@ async function getImage(request) {
     return new Response('Image not found', { status: 404 });
   }
 
-  // CORSヘッダーを追加して返却
   const headers = new Headers(response.headers);
   headers.set('Access-Control-Allow-Origin', '*');
   headers.set('Cache-Control', 'public, max-age=86400');
@@ -39,7 +37,7 @@ export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
-  // 画像プロキシルート（/image?url=...）
+  // 画像プロキシルート
   if (url.pathname === '/image') {
     return await getImage(request);
   }
@@ -154,7 +152,7 @@ export async function onRequest(context) {
   }
 
   // -----------------------------
-  // メタスコア計算（非線形強調版 + 相乗効果）
+  // メタスコア計算
   // -----------------------------
   function calcStats(arr) {
     const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -207,7 +205,8 @@ export async function onRequest(context) {
     return order === "asc" ? valA - valB : valB - valA;
   });
 
-  const toggleOrder = order === "asc" ? "desc" : "asc";
+  // トグル用の新しいorder（クリック時に昇順⇔降順を切り替える）
+  const newOrder = order === "asc" ? "desc" : "asc";
 
   // -----------------------------
   // セレクトボックス
@@ -390,13 +389,20 @@ button:hover {
   box-shadow: 0 0 14px rgba(74,108,255,0.5);
   border: 1px solid rgba(120,160,255,0.6);
 }
-.mode-active {
-  background: #4a6cff;
-}
-.meta-active {
+/* ===== 新しい色分け ===== */
+.mode-active-asc {
   background: #f59e0b;
   color: #0b0f1a;
   font-weight: 600;
+  box-shadow: 0 0 14px rgba(245,158,11,0.4);
+  border-color: #f59e0b;
+}
+.mode-active-desc {
+  background: #f9a8d4;
+  color: #0b0f1a;
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(249,168,212,0.3);
+  border-color: #f9a8d4;
 }
 .week-select {
   background: rgba(255,255,255,0.08);
@@ -548,25 +554,25 @@ button:hover {
     </button>
   </div>
   <div class="panel">
-    <button class="${mode==='win_rate'?'mode-active':''}"
-      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=win_rate&order=${order}&week=${listId}'">
+    <!-- 勝率ボタン：クリックで昇順⇔降順トグル -->
+    <button class="${mode === 'win_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
+      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=win_rate&order=${mode === 'win_rate' ? newOrder : 'desc'}&week=${listId}'">
       勝率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <button class="${mode==='on_rate'?'mode-active':''}"
-      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=on_rate&order=${order}&week=${listId}'">
+    <!-- PICK率ボタン -->
+    <button class="${mode === 'on_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
+      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=on_rate&order=${mode === 'on_rate' ? newOrder : 'desc'}&week=${listId}'">
       PICK率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <button class="${mode==='ban_rate'?'mode-active':''}"
-      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=ban_rate&order=${order}&week=${listId}'">
+    <!-- BAN率ボタン -->
+    <button class="${mode === 'ban_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
+      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=ban_rate&order=${mode === 'ban_rate' ? newOrder : 'desc'}&week=${listId}'">
       BAN率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <button class="${mode==='meta_score'?'meta-active':''}"
-      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=meta_score&order=${order}&week=${listId}'">
+    <!-- METAボタン -->
+    <button class="${mode === 'meta_score' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
+      onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=meta_score&order=${mode === 'meta_score' ? newOrder : 'desc'}&week=${listId}'">
       META ${order === 'asc' ? '▲' : '▼'}
-    </button>
-    <button onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=${mode}&order=${toggleOrder}&week=${listId}'"
-            style="background:rgba(255,255,255,0.1); font-size:13px; padding:6px 10px;">
-      ${order === 'asc' ? '⬆ 昇順' : '⬇ 降順'}
     </button>
   </div>
   <div class="table-wrap">
