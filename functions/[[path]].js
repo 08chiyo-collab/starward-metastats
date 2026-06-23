@@ -578,46 +578,47 @@ export async function onRequest(context) {
       }
     }
 
-   // ========================
-// イベントリスナー（DOMContentLoaded内で直接バインド）
-// ========================
-document.addEventListener('DOMContentLoaded', function() {
-  // ① キャラクター名クリック
-  document.querySelectorAll('.char-name').forEach(function(el) {
-    el.addEventListener('click', function(e) {
-      e.stopPropagation();
-      var charName = this.textContent.trim();
-      if (charName) {
-        openHistoryModal(charName);
+    // ========================
+    // イベントリスナー（イベントデリゲーションで確実に動作）
+    // ========================
+    document.addEventListener('DOMContentLoaded', function() {
+      // ① テーブル全体にイベントデリゲーション（動的生成された要素にも対応）
+      document.querySelector('#rankTable').addEventListener('click', function(e) {
+        var target = e.target.closest('.char-name');
+        if (target) {
+          e.stopPropagation();
+          var charName = target.textContent.trim();
+          if (charName) {
+            openHistoryModal(charName);
+          }
+        }
+      });
+
+      // ② モーダル背景クリックで閉じる
+      var modal = document.getElementById('historyModal');
+      if (modal) {
+        modal.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeHistoryModal();
+          }
+        });
       }
-    });
-  });
 
-  // ② モーダル背景クリックで閉じる
-  var modal = document.getElementById('historyModal');
-  if (modal) {
-    modal.addEventListener('click', function(e) {
-      if (e.target === this) {
-        closeHistoryModal();
+      // ③ 閉じるボタン（×）クリック
+      var closeBtn = document.getElementById('modalClose');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function(e) {
+          closeHistoryModal();
+        });
       }
-    });
-  }
 
-  // ③ 閉じるボタン（×）クリック
-  var closeBtn = document.getElementById('modalClose');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', function(e) {
-      closeHistoryModal();
+      // ④ ESCキーで閉じる
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          closeHistoryModal();
+        }
+      });
     });
-  }
-
-  // ④ ESCキーで閉じる
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      closeHistoryModal();
-    }
-  });
-});
   </script>
   `;
 
