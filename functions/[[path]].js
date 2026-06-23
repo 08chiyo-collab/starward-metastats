@@ -466,14 +466,16 @@ export async function onRequest(context) {
       }
 
       const reversedData = [...filteredData].reverse();
-
       const labels = reversedData.map(d => {
-        const parts = d.week.split(' - ');
-        if (parts.length === 2) {
-          return parts[0].replace(/\\\\/g, '/');
-        }
-        return d.week;
-      });
+  const parts = d.week.split(' - ');
+  if (parts.length === 2) {
+    // ★ 日付部分（parts[0]）から時刻（" 00:00"）を削除する
+    return parts[0].split(' ')[0].replace(/\\\\/g, '/');
+  }
+  return d.week;
+});
+
+      
 
       const winData = reversedData.map(d => d.win_rate);
       const pickData = reversedData.map(d => d.pick_rate);
