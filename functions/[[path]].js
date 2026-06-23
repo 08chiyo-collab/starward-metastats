@@ -361,7 +361,8 @@ export async function onRequest(context) {
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'starward_meta_${weekName.replace(/[\\s\\/]/g, '_')}.csv';
+      var safeName = weekName.replace(/[\\s\\/]/g, '_');
+      link.download = 'starward_meta_' + safeName + '.csv';
       link.click();
       URL.revokeObjectURL(link.href);
     }
@@ -372,7 +373,8 @@ export async function onRequest(context) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'starward_meta_${weekName.replace(/[\\s\\/]/g, '_')}.json';
+      var safeName = weekName.replace(/[\\s\\/]/g, '_');
+      link.download = 'starward_meta_' + safeName + '.json';
       link.click();
       URL.revokeObjectURL(link.href);
     }
@@ -390,7 +392,8 @@ export async function onRequest(context) {
           allowTaint: true
         }).then(canvas => {
           const link = document.createElement('a');
-          link.download = 'starward_meta_${weekName.replace(/[\\s\\/]/g, '_')}.png';
+          var safeName = weekName.replace(/[\\s\\/]/g, '_');
+          link.download = 'starward_meta_' + safeName + '.png';
           link.href = canvas.toDataURL('image/png');
           link.click();
         }).catch(err => {
@@ -404,15 +407,21 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能（イベントデリゲーション版）
+    // 履歴グラフ機能
     // ========================
     let historyChartInstance = null;
 
     function openHistoryModal(charName) {
+      console.log('openHistoryModal called for:', charName);
       const modal = document.getElementById('historyModal');
       const title = document.getElementById('modalTitle');
       const canvas = document.getElementById('historyChart');
       const loading = document.getElementById('historyLoading');
+
+      if (!modal || !title || !canvas || !loading) {
+        console.error('Modal elements not found!');
+        return;
+      }
 
       modal.style.display = 'block';
       title.textContent = charName + ' の履歴';
@@ -579,22 +588,30 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // イベントリスナー（イベントデリゲーションで確実に動作）
+    // イベントリスナー（DOMContentLoaded内）
     // ========================
     document.addEventListener('DOMContentLoaded', function() {
-      // ① テーブル全体にイベントデリゲーション（動的生成された要素にも対応）
-      document.querySelector('#rankTable').addEventListener('click', function(e) {
-        var target = e.target.closest('.char-name');
-        if (target) {
-          e.stopPropagation();
-          var charName = target.textContent.trim();
-          if (charName) {
-            openHistoryModal(charName);
-          }
-        }
-      });
+      console.log('DOMContentLoaded fired!');
 
-      // ② モーダル背景クリックで閉じる
+      // テーブルにイベントデリゲーション
+      var table = document.querySelector('#rankTable');
+      if (table) {
+        table.addEventListener('click', function(e) {
+          var target = e.target.closest('.char-name');
+          if (target) {
+            e.stopPropagation();
+            var charName = target.textContent.trim();
+            console.log('Clicked char:', charName);
+            if (charName) {
+              openHistoryModal(charName);
+            }
+          }
+        });
+      } else {
+        console.error('rankTable not found!');
+      }
+
+      // モーダル背景クリック
       var modal = document.getElementById('historyModal');
       if (modal) {
         modal.addEventListener('click', function(e) {
@@ -604,7 +621,7 @@ export async function onRequest(context) {
         });
       }
 
-      // ③ 閉じるボタン（×）クリック
+      // 閉じるボタン
       var closeBtn = document.getElementById('modalClose');
       if (closeBtn) {
         closeBtn.addEventListener('click', function(e) {
@@ -612,7 +629,7 @@ export async function onRequest(context) {
         });
       }
 
-      // ④ ESCキーで閉じる
+      // ESCキー
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
           closeHistoryModal();
