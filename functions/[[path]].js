@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 修正済み exportScript（Chart.js 4.x + Zoom 2.x 正しい構造）
+  // 修正版（ズーム無効化 + Y軸固定 -200〜1000）
   // ============================================
   const exportScript = `
   <script>
@@ -496,28 +496,6 @@ export async function onRequest(context) {
           const s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            loadZoomPlugin();
-          };
-          document.head.appendChild(s);
-        } else {
-          loadZoomPlugin();
-        }
-      }
-
-      function loadZoomPlugin() {
-        if (typeof ChartZoom === 'undefined') {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
-          s.onload = function() {
-            console.log('ChartZoom 2.0.1 loaded');
-            if (typeof Chart !== 'undefined') {
-              Chart.register(ChartZoom);
-              console.log('ChartZoom registered');
-            }
-            renderChart();
-          };
-          s.onerror = function() {
-            console.warn('ChartZoom load failed');
             renderChart();
           };
           document.head.appendChild(s);
@@ -527,7 +505,7 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // ★ 正しい構造（修正済み）
+        // ★ ズームプラグインを完全に削除し、Y軸を -200〜1000 に固定
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -619,26 +597,8 @@ export async function onRequest(context) {
                   }
                   return value.toFixed(1);
                 }
-              },
-              // ★ 正しい構造（修正済み）
-              zoom: {
-                pan: {
-                  enabled: true,
-                  mode: 'xy',
-                  modifierKey: null   // 修飾キーなしでドラッグ
-                },
-                zoom: {
-                  wheel: {
-                    enabled: true,
-                    speed: 0.05
-                  },
-                  mode: 'xy',
-                  limits: {
-                    x: { minRange: 1, max: 16 },
-                    y: { minRange: 5, max: 100 }
-                  }
-                }
               }
+              // ★ zoom プラグインは削除（無効化）
             },
             scales: {
               x: {
@@ -646,17 +606,16 @@ export async function onRequest(context) {
                 grid: { color: 'rgba(255,255,255,0.05)' }
               },
               y: {
+                min: -200,   // ★ 固定下限
+                max: 1000,   // ★ 固定上限
                 ticks: { color: '#ffffff' },
-                grid: { color: 'rgba(255,255,255,0.05)' },
-                beginAtZero: true,
-                max: 100
+                grid: { color: 'rgba(255,255,255,0.05)' }
               }
             }
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with Chart.js 4.x + Zoom 2.x (corrected)');
-        console.log('Zoom limits:', historyChartInstance.options.plugins.zoom.zoom.limits);
+        console.log('Chart rendered with Y axis fixed -200 to 1000 (zoom disabled)');
       }
 
       loadLibraries();
