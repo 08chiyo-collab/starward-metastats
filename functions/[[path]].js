@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // exportScript（Y軸固定 -50〜150, X軸ホイールズーム, 水平スクロール）
+  // 修正版（横スクロールバー実装＋データ表示）
   // ============================================
   const exportScript = `
   <script>
@@ -455,12 +455,14 @@ export async function onRequest(context) {
         historyChartInstance = null;
       }
 
+      // ★ データがnullの週を除去
       const filteredData = data.filter(d => d.win_rate !== null);
       if (filteredData.length === 0) {
         alert('このキャラクターの履歴データがありません');
         return;
       }
 
+      // ★ 横軸：左が新しい週、右が古い週
       const reversedData = [...filteredData].reverse();
 
       const labels = reversedData.map(d => {
@@ -477,15 +479,15 @@ export async function onRequest(context) {
       const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
-      // チャートの幅をデータ点数に応じて設定（1点あたり80px）
-      const chartWidth = Math.max(800, labels.length * 80);
+      // ★ チャートの幅を固定（1週あたり100px、最小800px）
+      const baseWidth = Math.max(800, labels.length * 100);
 
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            console.log('Chart.js 4.4.7 loaded');
+            console.log('Chart.js loaded');
             loadDataLabels();
           };
           document.head.appendChild(s);
@@ -499,28 +501,7 @@ export async function onRequest(context) {
           const s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            loadZoomPlugin();
-          };
-          document.head.appendChild(s);
-        } else {
-          loadZoomPlugin();
-        }
-      }
-
-      function loadZoomPlugin() {
-        if (typeof ChartZoom === 'undefined') {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
-          s.onload = function() {
-            console.log('ChartZoom 2.0.1 loaded');
-            if (typeof Chart !== 'undefined') {
-              Chart.register(ChartZoom);
-              console.log('ChartZoom registered');
-            }
-            renderChart();
-          };
-          s.onerror = function() {
-            console.warn('ChartZoom load failed');
+            console.log('DataLabels loaded');
             renderChart();
           };
           document.head.appendChild(s);
@@ -530,11 +511,21 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // チャートのキャンバス要素に width を設定（スクロール用）
         const canvas = document.getElementById('historyChart');
+        const wrapper = document.getElementById('scrollWrapper');
+
+        // ★ Canvas の幅を設定
         if (canvas) {
-          canvas.style.width = chartWidth + 'px';
+          canvas.width = baseWidth;
+          canvas.style.width = baseWidth + 'px';
           canvas.style.height = '100%';
+          canvas.style.display = 'block';
+        }
+
+        // ★ ラッパーの幅を設定（スクロールバーを表示させる）
+        if (wrapper) {
+          wrapper.style.width = baseWidth + 'px';
+          wrapper.style.minWidth = '100%';
         }
 
         historyChartInstance = new Chart(ctx, {
@@ -628,19 +619,6 @@ export async function onRequest(context) {
                   }
                   return value.toFixed(1);
                 }
-              },
-              zoom: {
-                pan: { enabled: false },    // ← ドラッグ無効
-                zoom: {
-                  wheel: {
-                    enabled: true,
-                    speed: 0.05
-                  },
-                  mode: 'x',                // ← X軸のみズーム
-                  limits: {
-                    x: { minRange: 1, max: 16 }  // 最小1週、最大16週表示
-                  }
-                }
               }
             },
             scales: {
@@ -649,8 +627,8 @@ export async function onRequest(context) {
                 grid: { color: 'rgba(255,255,255,0.05)' }
               },
               y: {
-                min: -50,                  // ← Y軸下限固定
-                max: 150,                  // ← Y軸上限固定
+                min: -50,
+                max: 150,
                 ticks: { color: '#ffffff' },
                 grid: { color: 'rgba(255,255,255,0.05)' }
               }
@@ -659,7 +637,7 @@ export async function onRequest(context) {
           plugins: [ChartDataLabels]
         });
 
-        console.log('Chart rendered: Y axis fixed -50~150, X zoom enabled, pan disabled');
+        console.log('Chart rendered: ' + labels.length + ' weeks, width: ' + baseWidth + 'px');
       }
 
       loadLibraries();
@@ -915,18 +893,7 @@ button:hover {
   margin: 10px 0 20px;
 }
 
-/* ===== スクロール用コンテナ ===== */
-.scroll-wrapper {
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  border-radius: 12px;
-}
-.scroll-wrapper canvas {
-  display: block;
-  height: 100%;
-}
-
+/* ===== スクロールバー用 ===== */
 #historyModal {
   display: none;
   position: fixed;
@@ -976,7 +943,18 @@ button:hover {
 #historyModal .chart-container {
   position: relative;
   height: 320px;
-  overflow: hidden;
+  overflow: visible;
+}
+#historyModal .scroll-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  height: 100%;
+  width: 100%;
+}
+#historyModal .scroll-wrapper canvas {
+  display: block;
+  height: 100%;
 }
 #historyModal .loading-text {
   text-align: center;
@@ -1067,7 +1045,7 @@ button:hover {
     <div class="chart-container">
       <div class="loading-text" id="historyLoading">⏳ データを読み込み中...</div>
       <div class="scroll-wrapper" id="scrollWrapper">
-        <canvas id="historyChart" style="display:none;"></canvas>
+        <canvas id="historyChart" style="display:none; height:100%;"></canvas>
       </div>
     </div>
   </div>
