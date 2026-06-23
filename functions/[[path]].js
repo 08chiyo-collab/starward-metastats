@@ -391,18 +391,18 @@ button:hover {
 }
 /* ===== 新しい色分け ===== */
 .mode-active-asc {
-  background: #f59e0b;
-  color: #0b0f1a;
-  font-weight: 600;
-  box-shadow: 0 0 14px rgba(245,158,11,0.4);
-  border-color: #f59e0b;
-}
-.mode-active-desc {
   background: #f9a8d4;
   color: #0b0f1a;
   font-weight: 600;
   box-shadow: 0 0 14px rgba(249,168,212,0.3);
   border-color: #f9a8d4;
+}
+.mode-active-desc {
+  background: #f59e0b;
+  color: #0b0f1a;
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(245,158,11,0.4);
+  border-color: #f59e0b;
 }
 .week-select {
   background: rgba(255,255,255,0.08);
