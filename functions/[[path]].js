@@ -120,10 +120,10 @@ function computeMetaScores(data) {
 }
 
 // ============================================
-// 履歴データ取得API（選択週を基準に過去8週）
+// 履歴データ取得API（選択週を基準に過去16週）
 // ============================================
 async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
-  const MAX_WEEKS = 8;
+  const MAX_WEEKS = 16;  // ← 8→16に変更
   let startIndex = 0;
   if (selectedWeekId) {
     const foundIndex = weeks.findIndex(w => w.id.toString() === selectedWeekId);
@@ -329,7 +329,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 完全修正済み exportScript
+  // 完全修正済み exportScript（16週・ズーム制限付き）
   // ============================================
   const exportScript = `
   <script>
@@ -422,7 +422,7 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能（完全改善版）
+    // 履歴グラフ機能（16週・ズーム・パン完全対応）
     // ========================
     let historyChartInstance = null;
     let chartReady = false;
@@ -440,7 +440,7 @@ export async function onRequest(context) {
       }
 
       modal.style.display = 'block';
-      title.textContent = charName + ' の履歴';
+      title.textContent = charName + ' の履歴（16週）';
       loading.style.display = 'block';
       canvas.style.display = 'none';
 
@@ -496,41 +496,60 @@ export async function onRequest(context) {
       const metaScaled = metaData.map(v => v / 10);
 
       function loadChartAndRender() {
+        // Chart.js 本体を読み込み
         if (typeof Chart === 'undefined') {
           const script = document.createElement('script');
           script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
           script.onload = function() {
-            const script2 = document.createElement('script');
-            script2.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
-            script2.onload = function() {
-              const script3 = document.createElement('script');
-              script3.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
-              script3.onload = function() {
-                // ★ 重要：ChartZoom が正しく読み込まれたらレンダリング
-                if (typeof ChartZoom !== 'undefined') {
-                  renderChart();
-                } else {
-                  // 万が一 ChartZoom が undefined の場合、遅延読み込みを試みる
-                  setTimeout(renderChart, 500);
-                }
-              };
-              document.head.appendChild(script3);
-            };
-            document.head.appendChild(script2);
+            loadDataLabels();
           };
           document.head.appendChild(script);
         } else {
+          loadDataLabels();
+        }
+      }
+
+      function loadDataLabels() {
+        if (typeof ChartDataLabels === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
+          script.onload = function() {
+            loadZoomPlugin();
+          };
+          document.head.appendChild(script);
+        } else {
+          loadZoomPlugin();
+        }
+      }
+
+      function loadZoomPlugin() {
+        if (typeof ChartZoom === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
+          script.onload = function() {
+            console.log('ChartZoom loaded successfully');
+            renderChart();
+          };
+          script.onerror = function() {
+            console.error('Failed to load ChartZoom');
+            // それでもレンダリング（ズームなしで）
+            renderChart();
+          };
+          document.head.appendChild(script);
+        } else {
+          console.log('ChartZoom already loaded');
           renderChart();
         }
       }
 
       function renderChart() {
-        // ★ 修正: ChartZoom を plugins 配列に追加
+        // プラグインを準備
         const plugins = [ChartDataLabels];
         if (typeof ChartZoom !== 'undefined') {
           plugins.push(ChartZoom);
+          console.log('ChartZoom registered');
         } else {
-          console.warn('ChartZoom is not loaded. Pan/zoom will be disabled.');
+          console.warn('ChartZoom is not available; zoom/pan disabled');
         }
 
         historyChartInstance = new Chart(ctx, {
@@ -629,7 +648,7 @@ export async function onRequest(context) {
                 pan: {
                   enabled: true,
                   mode: 'xy'
-                  // ★ modifierKey を削除 → 修飾キーなしでドラッグ可能になる
+                  // modifierKey を省略 → 修飾キーなしでドラッグ
                 },
                 zoom: {
                   wheel: {
@@ -638,7 +657,7 @@ export async function onRequest(context) {
                   },
                   mode: 'xy',
                   limits: {
-                    x: { minRange: 1, max: 8 },
+                    x: { minRange: 1, max: 16 },  // 最大16週分までズームアウト可能
                     y: { minRange: 5, max: 100 }
                   }
                 }
@@ -657,10 +676,10 @@ export async function onRequest(context) {
               }
             }
           },
-          // ★ plugins 配列に ChartZoom を含める
           plugins: plugins
         });
         chartReady = true;
+        console.log('Chart rendered with zoom plugin:', typeof ChartZoom !== 'undefined');
       }
 
       loadChartAndRender();
@@ -1068,7 +1087,7 @@ button:hover {
 <div id="historyModal">
   <div class="modal-content">
     <div class="modal-header">
-      <h2 id="modalTitle">キャラクター履歴</h2>
+      <h2 id="modalTitle">キャラクター履歴（16週）</h2>
       <span class="modal-close" id="modalClose">&times;</span>
     </div>
     <div class="chart-container">
