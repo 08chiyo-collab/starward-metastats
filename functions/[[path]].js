@@ -425,6 +425,7 @@ export async function onRequest(context) {
     // 履歴グラフ機能（完全改善版）
     // ========================
     let historyChartInstance = null;
+    let chartReady = false;
 
     function openHistoryModal(charName) {
       console.log('openHistoryModal called for:', charName);
@@ -477,7 +478,7 @@ export async function onRequest(context) {
         return;
       }
 
-      // ★ 横軸：左が新しい週、右が古い週になるよう逆順に
+      // 横軸：左が新しい週、右が古い週になるよう逆順に
       const reversedData = [...filteredData].reverse();
 
       const labels = reversedData.map(d => {
@@ -505,7 +506,13 @@ export async function onRequest(context) {
               const script3 = document.createElement('script');
               script3.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
               script3.onload = function() {
-                renderChart();
+                // ★ 重要：ChartZoom が正しく読み込まれたらレンダリング
+                if (typeof ChartZoom !== 'undefined') {
+                  renderChart();
+                } else {
+                  // 万が一 ChartZoom が undefined の場合、遅延読み込みを試みる
+                  setTimeout(renderChart, 500);
+                }
               };
               document.head.appendChild(script3);
             };
@@ -518,158 +525,146 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-  // ============================================
-  // ★ ChartZoom の登録（確実に動作させる）
-  // ============================================
-  try {
-    if (typeof Chart !== 'undefined') {
-      if (typeof ChartDataLabels !== 'undefined' && !Chart.registry.plugins.get('datalabels')) {
-        Chart.register(ChartDataLabels);
-      }
-      if (typeof ChartZoom !== 'undefined' && !Chart.registry.plugins.get('zoom')) {
-        Chart.register(ChartZoom);
-      }
-    }
-  } catch (e) {
-    console.warn('Plugin registration failed:', e);
-  }
+        // ★ 修正: ChartZoom を plugins 配列に追加
+        const plugins = [ChartDataLabels];
+        if (typeof ChartZoom !== 'undefined') {
+          plugins.push(ChartZoom);
+        } else {
+          console.warn('ChartZoom is not loaded. Pan/zoom will be disabled.');
+        }
 
-  // ============================================
-  // ★ チャート作成（zoom 設定は options.plugins 内に直接記述）
-  // ============================================
-  historyChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: '勝率 (%)',
-          data: winData,
-          borderColor: '#7ee787',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointBackgroundColor: '#7ee787',
-          pointBorderColor: '#ffffff'
-        },
-        {
-          label: 'PICK率 (%)',
-          data: pickData,
-          borderColor: '#7ab7ff',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointBackgroundColor: '#7ab7ff',
-          pointBorderColor: '#ffffff'
-        },
-        {
-          label: 'BAN率 (%)',
-          data: banData,
-          borderColor: '#ff7a7a',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointBackgroundColor: '#ff7a7a',
-          pointBorderColor: '#ffffff'
-        },
-        {
-          label: 'META (×10)',
-          data: metaScaled,
-          borderColor: '#fbbf24',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0,
-          borderDash: [5, 5],
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointBackgroundColor: '#fbbf24',
-          pointBorderColor: '#ffffff'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          labels: {
-            color: '#ffffff',
-            font: { size: 12 }
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              let label = context.dataset.label || '';
-              let value = context.parsed.y;
-              if (context.dataset.label === 'META (×10)') {
-                return label + ': ' + (value * 10).toFixed(0);
+        historyChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: '勝率 (%)',
+                data: winData,
+                borderColor: '#7ee787',
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#7ee787',
+                pointBorderColor: '#ffffff'
+              },
+              {
+                label: 'PICK率 (%)',
+                data: pickData,
+                borderColor: '#7ab7ff',
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#7ab7ff',
+                pointBorderColor: '#ffffff'
+              },
+              {
+                label: 'BAN率 (%)',
+                data: banData,
+                borderColor: '#ff7a7a',
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#ff7a7a',
+                pointBorderColor: '#ffffff'
+              },
+              {
+                label: 'META (×10)',
+                data: metaScaled,
+                borderColor: '#fbbf24',
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                borderDash: [5, 5],
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#fbbf24',
+                pointBorderColor: '#ffffff'
               }
-              return label + ': ' + value.toFixed(1) + '%';
-            }
-          }
-        },
-        // ============================================
-        // ★ datalabels 設定（点の上に白文字表示）
-        // ============================================
-        datalabels: {
-          color: '#ffffff',
-          anchor: 'end',
-          align: 'top',
-          font: { size: 10, weight: 'bold' },
-          offset: 4,
-          formatter: function(value, context) {
-            var datasetLabel = context.dataset.label;
-            if (datasetLabel === 'META (×10)') {
-              return (value * 10).toFixed(0);
-            }
-            return value.toFixed(1);
-          }
-        },
-        // ============================================
-        // ★ zoom 設定（ここに直接書く）
-        // ============================================
-        zoom: {
-          pan: {
-            enabled: true,
-            mode: 'xy'
-            // modifierKey は省略（修飾キーなしでドラッグ可能）
+            ]
           },
-          zoom: {
-            wheel: {
-              enabled: true,
-              speed: 0.05
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: '#ffffff',
+                  font: { size: 12 }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    let label = context.dataset.label || '';
+                    let value = context.parsed.y;
+                    if (context.dataset.label === 'META (×10)') {
+                      return label + ': ' + (value * 10).toFixed(0);
+                    }
+                    return label + ': ' + value.toFixed(1) + '%';
+                  }
+                }
+              },
+              datalabels: {
+                color: '#ffffff',
+                anchor: 'end',
+                align: 'top',
+                font: { size: 10, weight: 'bold' },
+                offset: 4,
+                formatter: function(value, context) {
+                  var datasetLabel = context.dataset.label;
+                  if (datasetLabel === 'META (×10)') {
+                    return (value * 10).toFixed(0);
+                  }
+                  return value.toFixed(1);
+                }
+              },
+              zoom: {
+                pan: {
+                  enabled: true,
+                  mode: 'xy'
+                  // ★ modifierKey を削除 → 修飾キーなしでドラッグ可能になる
+                },
+                zoom: {
+                  wheel: {
+                    enabled: true,
+                    speed: 0.05
+                  },
+                  mode: 'xy',
+                  limits: {
+                    x: { minRange: 1, max: 8 },
+                    y: { minRange: 5, max: 100 }
+                  }
+                }
+              }
             },
-            mode: 'xy'
+            scales: {
+              x: {
+                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              },
+              y: {
+                ticks: { color: '#ffffff' },
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                beginAtZero: true,
+                max: 100
+              }
+            }
           },
-          limits: {
-            x: { minRange: 2 },
-            y: { minRange: 5 }
-          }
-        }
-      },
-      scales: {
-        x: {
-          ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
-          grid: { color: 'rgba(255,255,255,0.05)' }
-        },
-        y: {
-          ticks: { color: '#ffffff' },
-          grid: { color: 'rgba(255,255,255,0.05)' },
-          beginAtZero: true,
-          max: 100
-        }
+          // ★ plugins 配列に ChartZoom を含める
+          plugins: plugins
+        });
+        chartReady = true;
       }
-    },
-    plugins: []  // ← plugins 配列は空でOK（Chart.register で登録済み）
-  });
-}
+
+      loadChartAndRender();
+    }
 
     function closeHistoryModal() {
       document.getElementById('historyModal').style.display = 'none';
@@ -677,6 +672,7 @@ export async function onRequest(context) {
         historyChartInstance.destroy();
         historyChartInstance = null;
       }
+      chartReady = false;
     }
 
     // ========================
