@@ -31,6 +31,132 @@ async function getImage(request) {
 }
 
 // ============================================
+// 週リスト取得関数（再利用可能）
+// ============================================
+async function getWeeksList() {
+  const LIST_API = "https://xzy.shengtiangames.com/mini-game/xzy/battle-record/hot-rank-list";
+  try {
+    const res = await fetch(LIST_API, {
+      headers: {
+        "game-code": "XZYJP",
+        "lang": "ja-jp"
+      }
+    });
+    const json = await res.json();
+    if (json.code === 0 && json.data && json.data.length > 0) {
+      return json.data.sort((a, b) => b.sort - a.sort);
+    }
+    return [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// ============================================
+// ランキングデータ取得関数（再利用可能）
+// ============================================
+async function fetchRankingData(listId, ttScore, mode = 'win_rate') {
+  const API_URL =
+    `https://xzy.shengtiangames.com/mini-game/xzy/battle-record/hot-rank` +
+    `?tt_type=2v2` +
+    `&tt_score=${encodeURIComponent(ttScore)}` +
+    `&order_field=${mode === 'meta_score' ? 'win_rate' : mode}` +
+    `&order_method=DESC` +
+    `&list_id=${listId}`;
+
+  try {
+    const res = await fetch(API_URL, {
+      headers: {
+        "game-code": "XZYJP",
+        "lang": "ja-jp"
+      }
+    });
+    const json = await res.json();
+    return json.data || [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// ============================================
+// メタスコア計算関数（再利用可能）
+// ============================================
+function calcStats(arr) {
+  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+  const std = Math.sqrt(variance);
+  return { mean, std };
+}
+
+function zScore(value, mean, std) {
+  if (std === 0) return 0;
+  return (value - mean) / std;
+}
+
+function computeMetaScores(data) {
+  const winRates = data.map(d => parseFloat(d.win_rate) || 0);
+  const pickRates = data.map(d => parseFloat(d.on_rate) || 0);
+  const banRates = data.map(d => parseFloat(d.ban_rate) || 0);
+
+  const winStats = calcStats(winRates);
+  const pickStats = calcStats(pickRates);
+  const banStats = calcStats(banRates);
+
+  return data.map(d => {
+    const win = parseFloat(d.win_rate) || 0;
+    const pick = parseFloat(d.on_rate) || 0;
+    const ban = parseFloat(d.ban_rate) || 0;
+
+    const winZ = zScore(win, winStats.mean, winStats.std);
+    const pickZ = zScore(pick, pickStats.mean, pickStats.std);
+    const banZ = zScore(ban, banStats.mean, banStats.std);
+
+    const boostedWinZ = Math.sign(winZ) * Math.pow(Math.abs(winZ), 1.3);
+    const synergy = Math.max(0, winZ * pickZ);
+
+    const meta = boostedWinZ * 0.4 + pickZ * 0.4 + banZ * 0.2 + synergy * 0.3;
+    return { ...d, metaScore: meta };
+  });
+}
+
+// ============================================
+// 履歴データ取得API
+// ============================================
+async function getCharacterHistory(charName, ttScore, weeks) {
+  const MAX_WEEKS = 8;
+  const targetWeeks = weeks.slice(0, MAX_WEEKS);
+  const history = [];
+
+  for (const week of targetWeeks) {
+    const data = await fetchRankingData(week.id, ttScore);
+    // メタスコアを計算
+    const dataWithMeta = computeMetaScores(data);
+    const charData = dataWithMeta.find(d => d.role?.name_jp === charName || d.role?.english_name === charName);
+
+    if (charData) {
+      history.push({
+        week: week.name || `#${week.id}`,
+        win_rate: parseFloat(charData.win_rate) || 0,
+        pick_rate: parseFloat(charData.on_rate) || 0,
+        ban_rate: parseFloat(charData.ban_rate) || 0,
+        meta_score: Math.round((charData.metaScore || 0) * 100)
+      });
+    } else {
+      // データがない週はnull（グラフでスキップ）
+      history.push({
+        week: week.name || `#${week.id}`,
+        win_rate: null,
+        pick_rate: null,
+        ban_rate: null,
+        meta_score: null
+      });
+    }
+  }
+
+  return history;
+}
+
+// ============================================
 // メイン関数
 // ============================================
 export async function onRequest(context) {
@@ -42,9 +168,7 @@ export async function onRequest(context) {
     return await getImage(request);
   }
 
-  // ============================================
   // faviconルート（ヴォイドセーバーの画像）
-  // ============================================
   if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.png') {
     const imageUrl = 'https://sres.shengtiangames.com/uploads/publisher/60272a4a190dd024f74948bfde765f5a.png';
     const response = await fetch(imageUrl, {
@@ -62,10 +186,41 @@ export async function onRequest(context) {
     return new Response(response.body, { status: 200, headers: headers });
   }
 
-  // 以降、既存のメタ統計表示処理（そのまま）...
+  // ============================================
+  // 履歴データAPI
+  // ============================================
+  if (url.pathname === '/api/history') {
+    const charName = url.searchParams.get('char');
+    const scoreParam = url.searchParams.get('score') || '8000+';
+    let ttScore;
+    if (scoreParam === '8000+' || scoreParam.includes('8000+') || scoreParam === '8000') {
+      ttScore = '≥8000';
+    } else if (scoreParam === '6000-8000' || scoreParam.includes('6000')) {
+      ttScore = '≥6000，＜8000';
+    } else {
+      ttScore = '≥8000';
+    }
+
+    if (!charName) {
+      return new Response('Missing char parameter', { status: 400 });
+    }
+
+    const weeks = await getWeeksList();
+    if (weeks.length === 0) {
+      return new Response('No weeks found', { status: 500 });
+    }
+
+    const history = await getCharacterHistory(charName, ttScore, weeks);
+    return new Response(JSON.stringify(history), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
 
   // -----------------------------
-  // クエリパラメータ
+  // クエリパラメータ（メイン表示）
   // -----------------------------
   const rawScore = decodeURIComponent(
     url.searchParams.get("score") || "8000+"
@@ -92,25 +247,6 @@ export async function onRequest(context) {
   // -----------------------------
   // 全週リストを取得
   // -----------------------------
-  async function getWeeksList() {
-    const LIST_API = "https://xzy.shengtiangames.com/mini-game/xzy/battle-record/hot-rank-list";
-    try {
-      const res = await fetch(LIST_API, {
-        headers: {
-          "game-code": "XZYJP",
-          "lang": "ja-jp"
-        }
-      });
-      const json = await res.json();
-      if (json.code === 0 && json.data && json.data.length > 0) {
-        return json.data.sort((a, b) => b.sort - a.sort);
-      }
-      return [];
-    } catch (_) {
-      return [];
-    }
-  }
-
   const weeks = await getWeeksList();
 
   if (weeks.length === 0) {
@@ -127,31 +263,10 @@ export async function onRequest(context) {
   const weekName = activeWeek.name || `週次 #${listId}`;
 
   // -----------------------------
-  // ランキングAPI
+  // ランキングデータ取得＋メタスコア計算
   // -----------------------------
-  const apiOrderField = mode === 'meta_score' ? 'win_rate' : mode;
-
-  const API_URL =
-    `https://xzy.shengtiangames.com/mini-game/xzy/battle-record/hot-rank` +
-    `?tt_type=2v2` +
-    `&tt_score=${encodeURIComponent(tt_score)}` +
-    `&order_field=${apiOrderField}` +
-    `&order_method=DESC` +
-    `&list_id=${listId}`;
-
-  let latestData = [];
-  try {
-    const res = await fetch(API_URL, {
-      headers: {
-        "game-code": "XZYJP",
-        "lang": "ja-jp"
-      }
-    });
-    const json = await res.json();
-    latestData = json.data || [];
-  } catch (_) {
-    latestData = [];
-  }
+  const rawData = await fetchRankingData(listId, tt_score, mode);
+  const dataWithMeta = computeMetaScores(rawData);
 
   // -----------------------------
   // デバッグ
@@ -160,57 +275,22 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({
       selected_week: listId,
       week_name: weekName,
-      api_url: API_URL,
-      available_weeks: weeks.map(w => ({ id: w.id, name: w.name, sort: w.sort })),
-      count: latestData.length,
-      sample: latestData.slice(0, 3)
+      count: dataWithMeta.length,
+      sample: dataWithMeta.slice(0, 3).map(d => ({
+        name: d.role?.name_jp,
+        win: d.win_rate,
+        pick: d.on_rate,
+        ban: d.ban_rate,
+        meta: d.metaScore
+      }))
     }, null, 2), {
       headers: { "Content-Type": "application/json" }
     });
   }
 
-  if (latestData.length === 0) {
+  if (dataWithMeta.length === 0) {
     return new Response("指定された週のデータがありません", { status: 500 });
   }
-
-  // -----------------------------
-  // メタスコア計算
-  // -----------------------------
-  function calcStats(arr) {
-    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-    const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
-    const std = Math.sqrt(variance);
-    return { mean, std };
-  }
-
-  function zScore(value, mean, std) {
-    if (std === 0) return 0;
-    return (value - mean) / std;
-  }
-
-  const winRates = latestData.map(d => parseFloat(d.win_rate) || 0);
-  const pickRates = latestData.map(d => parseFloat(d.on_rate) || 0);
-  const banRates = latestData.map(d => parseFloat(d.ban_rate) || 0);
-
-  const winStats = calcStats(winRates);
-  const pickStats = calcStats(pickRates);
-  const banStats = calcStats(banRates);
-
-  const dataWithMeta = latestData.map(d => {
-    const win = parseFloat(d.win_rate) || 0;
-    const pick = parseFloat(d.on_rate) || 0;
-    const ban = parseFloat(d.ban_rate) || 0;
-
-    const winZ = zScore(win, winStats.mean, winStats.std);
-    const pickZ = zScore(pick, pickStats.mean, pickStats.std);
-    const banZ = zScore(ban, banStats.mean, banStats.std);
-
-    const boostedWinZ = Math.sign(winZ) * Math.pow(Math.abs(winZ), 1.3);
-    const synergy = Math.max(0, winZ * pickZ);
-
-    const meta = boostedWinZ * 0.4 + pickZ * 0.4 + banZ * 0.2 + synergy * 0.3;
-    return { ...d, metaScore: meta };
-  });
 
   // -----------------------------
   // ソート
@@ -227,7 +307,6 @@ export async function onRequest(context) {
     return order === "asc" ? valA - valB : valB - valA;
   });
 
-  // トグル用の新しいorder（クリック時に昇順⇔降順を切り替える）
   const newOrder = order === "asc" ? "desc" : "asc";
 
   // -----------------------------
@@ -240,7 +319,7 @@ export async function onRequest(context) {
   }).join("");
 
   // -----------------------------
-  // テーブル行（画像プロキシ経由）
+  // テーブル行（キャラ名にクリックイベント付与）
   // -----------------------------
   const rows = sorted.map((x, i) => {
     const r = x.role || {};
@@ -249,12 +328,13 @@ export async function onRequest(context) {
     const metaScore = x.metaScore || 0;
     const displayMeta = Math.round(metaScore * 100);
     const metaClass = metaScore < 0 ? 'meta-negative' : 'meta';
+    const charName = r.name_jp || r.english_name || "不明";
     return `
       <tr>
         <td class="rank">${i + 1}</td>
         <td>
           <div class="char">
-            <span>${r.name_jp || r.english_name || "不明"}</span>
+            <span class="char-name" data-char="${charName}" style="cursor:pointer;">${charName}</span>
             <img src="${proxyUrl}" loading="lazy" decoding="async" onerror="this.src='https://via.placeholder.com/44/4a6cff/ffffff?text=?'">
           </div>
         </td>
@@ -267,17 +347,20 @@ export async function onRequest(context) {
   }).join("");
 
   // -----------------------------
-  // エクスポートスクリプト
+  // エクスポート＆履歴機能スクリプト
   // -----------------------------
   const exportScript = `
   <script>
+    // ========================
+    // テーブルデータ取得
+    // ========================
     function getTableData() {
       const rows = document.querySelectorAll('#rankTable tbody tr');
       const data = [];
       rows.forEach(row => {
         const cells = row.querySelectorAll('td');
         if (cells.length < 6) return;
-        const name = row.querySelector('.char span')?.textContent || '';
+        const name = row.querySelector('.char-name')?.textContent || '';
         const win = cells[2]?.textContent?.replace('%', '') || '0';
         const pick = cells[3]?.textContent?.replace('%', '') || '0';
         const ban = cells[4]?.textContent?.replace('%', '') || '0';
@@ -294,6 +377,9 @@ export async function onRequest(context) {
       return data;
     }
 
+    // ========================
+    // エクスポート（CSV / JSON / PNG）
+    // ========================
     function downloadCSV() {
       const data = getTableData();
       if (data.length === 0) return;
@@ -344,11 +430,216 @@ export async function onRequest(context) {
       };
       document.head.appendChild(script);
     }
+
+    // ========================
+    // 履歴グラフ機能
+    // ========================
+    let historyChartInstance = null;
+
+    function openHistoryModal(charName) {
+      const modal = document.getElementById('historyModal');
+      const title = document.getElementById('modalTitle');
+      const canvas = document.getElementById('historyChart');
+      const loading = document.getElementById('historyLoading');
+
+      // モーダルを表示
+      modal.style.display = 'block';
+      title.textContent = charName + ' の履歴';
+      loading.style.display = 'block';
+      canvas.style.display = 'none';
+
+      // データ取得
+      const scoreParam = new URLSearchParams(window.location.search).get('score') || '8000+';
+      fetch('/api/history?char=' + encodeURIComponent(charName) + '&score=' + encodeURIComponent(scoreParam))
+        .then(res => res.json())
+        .then(data => {
+          loading.style.display = 'none';
+          canvas.style.display = 'block';
+          buildHistoryChart(data, charName);
+        })
+        .catch(err => {
+          loading.style.display = 'none';
+          alert('履歴データの取得に失敗しました: ' + err.message);
+        });
+    }
+
+    function buildHistoryChart(data, charName) {
+      const ctx = document.getElementById('historyChart').getContext('2d');
+
+      // 既存のチャートを破棄
+      if (historyChartInstance) {
+        historyChartInstance.destroy();
+        historyChartInstance = null;
+      }
+
+      // データがnullの週を除外（グラフの欠損を防ぐ）
+      const filteredData = data.filter(d => d.win_rate !== null);
+
+      // 週ラベルを短縮（日付部分だけ表示）
+      const labels = filteredData.map(d => {
+        const parts = d.week.split(' - ');
+        if (parts.length === 2) {
+          return parts[0].replace(/\\/g, '/'); // 例: 2026/06/11
+        }
+        return d.week;
+      });
+
+      const winData = filteredData.map(d => d.win_rate);
+      const pickData = filteredData.map(d => d.pick_rate);
+      const banData = filteredData.map(d => d.ban_rate);
+      const metaData = filteredData.map(d => d.meta_score);
+
+      // メタスコアのスケールを調整（他の指標と合わせるため）
+      const metaScaled = metaData.map(v => v / 10);
+
+      // Chart.js と datalabels を動的読み込み
+      function loadChartAndRender() {
+        if (typeof Chart === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+          script.onload = function() {
+            const script2 = document.createElement('script');
+            script2.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
+            script2.onload = function() {
+              renderChart();
+            };
+            document.head.appendChild(script2);
+          };
+          document.head.appendChild(script);
+        } else {
+          renderChart();
+        }
+      }
+
+      function renderChart() {
+        historyChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: '勝率 (%)',
+                data: winData,
+                borderColor: '#7ee787',
+                backgroundColor: 'rgba(126, 231, 135, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4
+              },
+              {
+                label: 'PICK率 (%)',
+                data: pickData,
+                borderColor: '#7ab7ff',
+                backgroundColor: 'rgba(122, 183, 255, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4
+              },
+              {
+                label: 'BAN率 (%)',
+                data: banData,
+                borderColor: '#ff7a7a',
+                backgroundColor: 'rgba(255, 122, 122, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4
+              },
+              {
+                label: 'META (×10)',
+                data: metaScaled,
+                borderColor: '#fbbf24',
+                backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                fill: true,
+                tension: 0.3,
+                borderDash: [5, 5],
+                pointRadius: 4
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: '#ffffff',
+                  font: { size: 12 }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    let label = context.dataset.label || '';
+                    let value = context.parsed.y;
+                    if (context.dataset.label === 'META (×10)') {
+                      return label + ': ' + (value * 10).toFixed(0);
+                    }
+                    return label + ': ' + value.toFixed(1) + '%';
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              },
+              y: {
+                ticks: { color: '#ffffff' },
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                beginAtZero: true,
+                max: 100
+              }
+            }
+          },
+          plugins: typeof ChartDataLabels !== 'undefined' ? [ChartDataLabels] : []
+        });
+      }
+
+      loadChartAndRender();
+    }
+
+    // ========================
+    // モーダル制御
+    // ========================
+    function closeHistoryModal() {
+      document.getElementById('historyModal').style.display = 'none';
+      if (historyChartInstance) {
+        historyChartInstance.destroy();
+        historyChartInstance = null;
+      }
+    }
+
+    // キャラ名クリックイベント
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.char-name').forEach(el => {
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const charName = this.textContent.trim();
+          if (charName) {
+            openHistoryModal(charName);
+          }
+        });
+      });
+
+      // モーダル閉じる
+      document.getElementById('modalClose').addEventListener('click', closeHistoryModal);
+      document.getElementById('historyModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+          closeHistoryModal();
+        }
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          closeHistoryModal();
+        }
+      });
+    });
   </script>
   `;
 
   // -----------------------------
-  // HTMLレスポンス
+  // HTMLレスポンス（モーダル追加）
   // -----------------------------
   return new Response(`
 <!DOCTYPE html>
@@ -411,7 +702,6 @@ button:hover {
   box-shadow: 0 0 14px rgba(74,108,255,0.5);
   border: 1px solid rgba(120,160,255,0.6);
 }
-/* ===== 新しい色分け ===== */
 .mode-active-asc {
   background: #f9a8d4;
   color: #0b0f1a;
@@ -526,11 +816,16 @@ button:hover {
   overflow: hidden;
   white-space: nowrap;
 }
-.char span {
+.char .char-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.char .char-name:hover {
+  color: #fbbf24;
 }
 .char img {
   width: 44px;
@@ -551,13 +846,72 @@ button:hover {
   font-size: 11px;
   margin: 10px 0 20px;
 }
+
+/* ===== 履歴モーダル ===== */
+#historyModal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+#historyModal .modal-content {
+  background: #1a1f2e;
+  max-width: 750px;
+  width: 92%;
+  margin: 40px auto;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+#historyModal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+#historyModal .modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+#historyModal .modal-close {
+  cursor: pointer;
+  font-size: 28px;
+  opacity: 0.6;
+  transition: 0.2s;
+  line-height: 1;
+}
+#historyModal .modal-close:hover {
+  opacity: 1;
+}
+#historyModal .chart-container {
+  position: relative;
+  height: 320px;
+}
+#historyModal .loading-text {
+  text-align: center;
+  padding: 60px 0;
+  opacity: 0.6;
+}
 </style>
 </head>
 <body>
+
 <div class="header">
   <div class="title">STARWARD META STATS</div>
   <div class="subtitle">${weekName}</div>
 </div>
+
 <div class="container">
   <div class="panel">
     <label for="weekSelect" style="opacity:0.7; font-size:14px;">週:</label>
@@ -565,6 +919,7 @@ button:hover {
       ${weekOptions}
     </select>
   </div>
+
   <div class="panel">
     <button class="${scoreParam === '6000-8000' ? 'score-active' : ''}"
       onclick="location.href='?score=6000-8000&mode=${mode}&order=${order}&week=${listId}'">
@@ -575,28 +930,26 @@ button:hover {
       8000+
     </button>
   </div>
+
   <div class="panel">
-    <!-- 勝率ボタン：クリックで昇順⇔降順トグル -->
     <button class="${mode === 'win_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
       onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=win_rate&order=${mode === 'win_rate' ? newOrder : 'desc'}&week=${listId}'">
       勝率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <!-- PICK率ボタン -->
     <button class="${mode === 'on_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
       onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=on_rate&order=${mode === 'on_rate' ? newOrder : 'desc'}&week=${listId}'">
       PICK率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <!-- BAN率ボタン -->
     <button class="${mode === 'ban_rate' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
       onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=ban_rate&order=${mode === 'ban_rate' ? newOrder : 'desc'}&week=${listId}'">
       BAN率 ${order === 'asc' ? '▲' : '▼'}
     </button>
-    <!-- METAボタン -->
     <button class="${mode === 'meta_score' ? (order === 'asc' ? 'mode-active-asc' : 'mode-active-desc') : ''}"
       onclick="location.href='?score=${encodeURIComponent(scoreParam)}&mode=meta_score&order=${mode === 'meta_score' ? newOrder : 'desc'}&week=${listId}'">
       META ${order === 'asc' ? '▲' : '▼'}
     </button>
   </div>
+
   <div class="table-wrap">
     <table id="rankTable">
       <thead>
@@ -614,15 +967,33 @@ button:hover {
       </tbody>
     </table>
   </div>
+
   <div class="panel export-group">
     <span class="export-label">エクスポート</span>
     <button class="export-btn" onclick="downloadCSV()">CSV</button>
     <button class="export-btn" onclick="downloadJSON()">JSON</button>
     <button class="export-btn" onclick="downloadPNG()">PNG</button>
   </div>
+
   <div class="footer">META ANALYTICS DASHBOARD</div>
 </div>
+
+<!-- ===== 履歴モーダル ===== -->
+<div id="historyModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modalTitle">キャラクター履歴</h2>
+      <span class="modal-close" id="modalClose">&times;</span>
+    </div>
+    <div class="chart-container">
+      <div class="loading-text" id="historyLoading">⏳ データを読み込み中...</div>
+      <canvas id="historyChart" style="display:none;"></canvas>
+    </div>
+  </div>
+</div>
+
 ${exportScript}
+
 </body>
 </html>
 `, {
