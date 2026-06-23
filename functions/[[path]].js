@@ -329,7 +329,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 完全修正済み exportScript
+  // 完全修正済み exportScript（Chart.register版）
   // ============================================
   const exportScript = `
   <script>
@@ -422,7 +422,7 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能（16週・ズーム制限・ドラッグ修正）
+    // 履歴グラフ機能（Chart.register 版）
     // ========================
     let historyChartInstance = null;
     let chartReady = false;
@@ -477,7 +477,6 @@ export async function onRequest(context) {
         return;
       }
 
-      // 横軸：左が新しい週、右が古い週
       const reversedData = [...filteredData].reverse();
 
       const labels = reversedData.map(d => {
@@ -494,8 +493,8 @@ export async function onRequest(context) {
       const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
-      // Chart.js 本体 + プラグインを読み込み
-      function loadChartDependencies() {
+      // ライブラリ読み込み
+      function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js';
@@ -527,6 +526,11 @@ export async function onRequest(context) {
           s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
           s.onload = function() {
             console.log('ChartZoom loaded');
+            // ★ 重要：ChartZoom を Chart に登録する
+            if (typeof Chart !== 'undefined' && Chart.register) {
+              Chart.register(ChartZoom);
+              console.log('ChartZoom registered with Chart.register()');
+            }
             renderChart();
           };
           s.onerror = function() {
@@ -535,18 +539,20 @@ export async function onRequest(context) {
           };
           document.head.appendChild(s);
         } else {
-          console.log('ChartZoom already exists');
+          // ★ ChartZoom が既に読み込まれている場合も登録を試みる
+          if (typeof Chart !== 'undefined' && Chart.register && !Chart.registry.plugins.get('zoom')) {
+            Chart.register(ChartZoom);
+            console.log('ChartZoom registered (already loaded)');
+          }
           renderChart();
         }
       }
 
       function renderChart() {
         const plugins = [ChartDataLabels];
-        if (typeof ChartZoom !== 'undefined') {
-          plugins.push(ChartZoom);
-        }
+        // ★ ChartZoom が登録されているか確認（plugins 配列には入れない！）
+        // Chart.register() で登録したプラグインは自動的に有効になる
 
-        // ★ 修正：pan の modifierKey を null に設定
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -639,12 +645,11 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ 修正：modifierKey: null を追加、limits を調整
+              // ★ Zoom設定（プラグインは Chart.register() で登録済み）
               zoom: {
                 pan: {
                   enabled: true,
-                  mode: 'xy',
-                  modifierKey: null  // ← これが効かない場合は 'ctrl' などに変更
+                  mode: 'xy'
                 },
                 zoom: {
                   wheel: {
@@ -672,13 +677,13 @@ export async function onRequest(context) {
               }
             }
           },
-          plugins: plugins
+          plugins: plugins  // ← DataLabels のみ、Zoom は含めない（Chart.register で登録済み）
         });
         chartReady = true;
-        console.log('Chart rendered with pan.modifierKey=null');
+        console.log('Chart rendered with registered ChartZoom');
       }
 
-      loadChartDependencies();
+      loadLibraries();
     }
 
     function closeHistoryModal() {
