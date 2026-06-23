@@ -329,18 +329,12 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 完全修正済み exportScript（Chart.register版）
+  // Chart.js 3.x 版 exportScript
   // ============================================
   const exportScript = `
   <script>
-    // ========================
-    // サーバーサイドから weekName を渡す
-    // ========================
     const weekName = ${JSON.stringify(weekName)};
 
-    // ========================
-    // テーブルデータ取得（エクスポート用）
-    // ========================
     function getTableData() {
       const rows = document.querySelectorAll('#rankTable tbody tr');
       const data = [];
@@ -364,9 +358,6 @@ export async function onRequest(context) {
       return data;
     }
 
-    // ========================
-    // エクスポート（CSV / JSON / PNG）
-    // ========================
     function downloadCSV() {
       const data = getTableData();
       if (data.length === 0) return;
@@ -421,14 +412,9 @@ export async function onRequest(context) {
       document.head.appendChild(script);
     }
 
-    // ========================
-    // 履歴グラフ機能（Chart.register 版）
-    // ========================
     let historyChartInstance = null;
-    let chartReady = false;
 
     function openHistoryModal(charName) {
-      console.log('openHistoryModal called for:', charName);
       const modal = document.getElementById('historyModal');
       const title = document.getElementById('modalTitle');
       const canvas = document.getElementById('historyChart');
@@ -493,11 +479,10 @@ export async function onRequest(context) {
       const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
-      // ライブラリ読み込み
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js';
+          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
           s.onload = function() {
             loadDataLabels();
           };
@@ -523,13 +508,12 @@ export async function onRequest(context) {
       function loadZoomPlugin() {
         if (typeof ChartZoom === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js';
           s.onload = function() {
-            console.log('ChartZoom loaded');
-            // ★ 重要：ChartZoom を Chart に登録する
-            if (typeof Chart !== 'undefined' && Chart.register) {
+            console.log('ChartZoom (1.2.1) loaded');
+            if (typeof Chart !== 'undefined') {
               Chart.register(ChartZoom);
-              console.log('ChartZoom registered with Chart.register()');
+              console.log('ChartZoom registered');
             }
             renderChart();
           };
@@ -539,20 +523,11 @@ export async function onRequest(context) {
           };
           document.head.appendChild(s);
         } else {
-          // ★ ChartZoom が既に読み込まれている場合も登録を試みる
-          if (typeof Chart !== 'undefined' && Chart.register && !Chart.registry.plugins.get('zoom')) {
-            Chart.register(ChartZoom);
-            console.log('ChartZoom registered (already loaded)');
-          }
           renderChart();
         }
       }
 
       function renderChart() {
-        const plugins = [ChartDataLabels];
-        // ★ ChartZoom が登録されているか確認（plugins 配列には入れない！）
-        // Chart.register() で登録したプラグインは自動的に有効になる
-
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -645,7 +620,6 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ Zoom設定（プラグインは Chart.register() で登録済み）
               zoom: {
                 pan: {
                   enabled: true,
@@ -677,10 +651,9 @@ export async function onRequest(context) {
               }
             }
           },
-          plugins: plugins  // ← DataLabels のみ、Zoom は含めない（Chart.register で登録済み）
+          plugins: [ChartDataLabels]
         });
-        chartReady = true;
-        console.log('Chart rendered with registered ChartZoom');
+        console.log('Chart rendered with Chart.js 3.x + Zoom 1.x');
       }
 
       loadLibraries();
@@ -692,12 +665,8 @@ export async function onRequest(context) {
         historyChartInstance.destroy();
         historyChartInstance = null;
       }
-      chartReady = false;
     }
 
-    // ========================
-    // イベントリスナー
-    // ========================
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOMContentLoaded fired!');
 
@@ -940,7 +909,6 @@ button:hover {
   margin: 10px 0 20px;
 }
 
-/* ===== 履歴モーダル ===== */
 #historyModal {
   display: none;
   position: fixed;
@@ -1071,7 +1039,6 @@ button:hover {
   <div class="footer">META ANALYTICS DASHBOARD</div>
 </div>
 
-<!-- ===== 履歴モーダル ===== -->
 <div id="historyModal">
   <div class="modal-content">
     <div class="modal-header">
