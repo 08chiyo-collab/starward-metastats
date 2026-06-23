@@ -41,14 +41,6 @@ export async function onRequest(context) {
   if (url.pathname === '/image') {
     return await getImage(request);
   }
-  export async function onRequest(context) {
-  const { request } = context;
-  const url = new URL(request.url);
-
-  // 画像プロキシルート
-  if (url.pathname === '/image') {
-    return await getImage(request);
-  }
 
   // ============================================
   // faviconルート（ヴォイドセーバーの画像）
