@@ -120,7 +120,7 @@ function computeMetaScores(data) {
 }
 
 // ============================================
-// 履歴データ取得API（選択週を基準に過去16週）
+// 履歴データ取得API
 // ============================================
 async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
   const MAX_WEEKS = 16;
@@ -167,12 +167,10 @@ export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
-  // 画像プロキシルート
   if (url.pathname === '/image') {
     return await getImage(request);
   }
 
-  // faviconルート（ヴォイドセーバー）
   if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.png') {
     const imageUrl = 'https://sres.shengtiangames.com/uploads/publisher/60272a4a190dd024f74948bfde765f5a.png';
     const response = await fetch(imageUrl, {
@@ -190,7 +188,6 @@ export async function onRequest(context) {
     return new Response(response.body, { status: 200, headers: headers });
   }
 
-  // 履歴データAPI
   if (url.pathname === '/api/history') {
     const charName = url.searchParams.get('char');
     const scoreParam = url.searchParams.get('score') || '8000+';
@@ -223,7 +220,7 @@ export async function onRequest(context) {
   }
 
   // -----------------------------
-  // メイン表示（クエリパラメータ）
+  // メイン表示
   // -----------------------------
   const rawScore = decodeURIComponent(
     url.searchParams.get("score") || "8000+"
@@ -329,11 +326,12 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // Chart.js 3.x 版 exportScript
+  // 修正済み exportScript（正しいZoomオプション）
   // ============================================
   const exportScript = `
   <script>
     const weekName = ${JSON.stringify(weekName)};
+    const CACHE_BUSTER = Date.now();
 
     function getTableData() {
       const rows = document.querySelectorAll('#rankTable tbody tr');
@@ -482,8 +480,9 @@ export async function onRequest(context) {
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
+            console.log('Chart.js 3.9.1 loaded');
             loadDataLabels();
           };
           document.head.appendChild(s);
@@ -495,7 +494,7 @@ export async function onRequest(context) {
       function loadDataLabels() {
         if (typeof ChartDataLabels === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
             loadZoomPlugin();
           };
@@ -508,9 +507,9 @@ export async function onRequest(context) {
       function loadZoomPlugin() {
         if (typeof ChartZoom === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js';
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            console.log('ChartZoom (1.2.1) loaded');
+            console.log('ChartZoom 1.2.1 loaded');
             if (typeof Chart !== 'undefined') {
               Chart.register(ChartZoom);
               console.log('ChartZoom registered');
@@ -528,6 +527,7 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
+        // ★ 修正: 正しいズームオプション構造（Chart.js 3.x + Zoom 1.x）
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -620,21 +620,22 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
+              // ★ 正しい構造
               zoom: {
+                enabled: true,
+                mode: 'xy',
+                limits: {
+                  x: { minRange: 1, max: 16 },
+                  y: { minRange: 5, max: 100 }
+                },
                 pan: {
                   enabled: true,
-                  mode: 'xy'
-                },
-                zoom: {
-                  wheel: {
-                    enabled: true,
-                    speed: 0.05
-                  },
                   mode: 'xy',
-                  limits: {
-                    x: { minRange: 1, max: 16 },
-                    y: { minRange: 5, max: 100 }
-                  }
+                  modifierKey: null   // ← 修飾キーなしでドラッグ可能
+                },
+                wheel: {
+                  enabled: true,
+                  speed: 0.05
                 }
               }
             },
@@ -653,7 +654,9 @@ export async function onRequest(context) {
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with Chart.js 3.x + Zoom 1.x');
+        console.log('Chart rendered with correct zoom options');
+        console.log('Zoom limits:', historyChartInstance.options.plugins.zoom.limits);
+        console.log('Pan modifierKey:', historyChartInstance.options.plugins.zoom.pan.modifierKey);
       }
 
       loadLibraries();
