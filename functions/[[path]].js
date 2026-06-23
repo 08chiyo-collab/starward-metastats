@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 修正版（横スクロールバー実装＋データ表示）
+  // 4グラフ版 exportScript
   // ============================================
   const exportScript = `
   <script>
@@ -384,13 +384,14 @@ export async function onRequest(context) {
     }
 
     function downloadPNG() {
-      const table = document.getElementById('rankTable');
-      if (!table) return;
+      // PNG出力は最初のグラフのみ（またはモーダル全体をキャプチャ）
+      const modalContent = document.querySelector('#historyModal .modal-content');
+      if (!modalContent) return;
       const script = document.createElement('script');
       script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
       script.onload = function() {
-        html2canvas(table, {
-          backgroundColor: '#0b0f1a',
+        html2canvas(modalContent, {
+          backgroundColor: '#1a1f2e',
           scale: 2,
           useCORS: true,
           allowTaint: true
@@ -410,15 +411,17 @@ export async function onRequest(context) {
       document.head.appendChild(script);
     }
 
-    let historyChartInstance = null;
+    // 4つのグラフインスタンスを保持
+    let chartInstances = { win: null, pick: null, ban: null, meta: null };
+    let chartData = {};
 
     function openHistoryModal(charName) {
       const modal = document.getElementById('historyModal');
       const title = document.getElementById('modalTitle');
-      const canvas = document.getElementById('historyChart');
       const loading = document.getElementById('historyLoading');
+      const chartsContainer = document.getElementById('chartsContainer');
 
-      if (!modal || !title || !canvas || !loading) {
+      if (!modal || !title || !loading || !chartsContainer) {
         console.error('Modal elements not found!');
         return;
       }
@@ -426,7 +429,7 @@ export async function onRequest(context) {
       modal.style.display = 'block';
       title.textContent = charName + ' の履歴（16週）';
       loading.style.display = 'block';
-      canvas.style.display = 'none';
+      chartsContainer.style.display = 'none';
 
       const params = new URLSearchParams(window.location.search);
       const scoreParam = params.get('score') || '8000+';
@@ -438,8 +441,8 @@ export async function onRequest(context) {
         })
         .then(data => {
           loading.style.display = 'none';
-          canvas.style.display = 'block';
-          buildHistoryChart(data, charName);
+          chartsContainer.style.display = 'block';
+          buildHistoryCharts(data, charName);
         })
         .catch(err => {
           loading.style.display = 'none';
@@ -447,22 +450,21 @@ export async function onRequest(context) {
         });
     }
 
-    function buildHistoryChart(data, charName) {
-      const ctx = document.getElementById('historyChart').getContext('2d');
-
-      if (historyChartInstance) {
-        historyChartInstance.destroy();
-        historyChartInstance = null;
+    function buildHistoryCharts(data, charName) {
+      // 既存のチャートを破棄
+      for (let key in chartInstances) {
+        if (chartInstances[key]) {
+          chartInstances[key].destroy();
+          chartInstances[key] = null;
+        }
       }
 
-      // ★ データがnullの週を除去
       const filteredData = data.filter(d => d.win_rate !== null);
       if (filteredData.length === 0) {
         alert('このキャラクターの履歴データがありません');
         return;
       }
 
-      // ★ 横軸：左が新しい週、右が古い週
       const reversedData = [...filteredData].reverse();
 
       const labels = reversedData.map(d => {
@@ -476,12 +478,120 @@ export async function onRequest(context) {
       const winData = reversedData.map(d => d.win_rate);
       const pickData = reversedData.map(d => d.pick_rate);
       const banData = reversedData.map(d => d.ban_rate);
-      const metaData = reversedData.map(d => d.meta_score);
-      const metaScaled = metaData.map(v => v / 10);
+      const metaData = reversedData.map(d => d.meta_score); // 生のMETAスコア（100倍済み）
 
-      // ★ チャートの幅を固定（1週あたり100px、最小800px）
+      // 各グラフのY軸範囲を計算
+      function getYRange(data, defaultMin, defaultMax, padding) {
+        const valid = data.filter(v => v !== null && isFinite(v));
+        if (valid.length === 0) return { min: defaultMin, max: defaultMax };
+        const min = Math.min(...valid);
+        const max = Math.max(...valid);
+        return {
+          min: Math.min(defaultMin, min - padding),
+          max: Math.max(defaultMax, max + padding)
+        };
+      }
+
+      const winRange = getYRange(winData, 40, 60, 3);
+      const pickRange = getYRange(pickData, 0, 20, 3);
+      const banRange = getYRange(banData, 0, 30, 5);
+      const metaRange = getYRange(metaData, -100, 100, 20);
+
+      // チャートの幅
       const baseWidth = Math.max(800, labels.length * 100);
 
+      // 各キャンバスをセットアップ
+      const canvasIds = ['winChart', 'pickChart', 'banChart', 'metaChart'];
+      const chartTypes = ['win', 'pick', 'ban', 'meta'];
+      const colors = ['#7ee787', '#7ab7ff', '#ff7a7a', '#fbbf24'];
+      const labels_ = ['勝率 (%)', 'PICK率 (%)', 'BAN率 (%)', 'METAスコア'];
+      const dataSets = [winData, pickData, banData, metaData];
+      const ranges = [winRange, pickRange, banRange, metaRange];
+      const borderDash = [false, false, false, [5, 5]];
+
+      function loadChart(index) {
+        const canvas = document.getElementById(canvasIds[index]);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        // キャンバスの幅を設定
+        canvas.width = baseWidth;
+        canvas.style.width = baseWidth + 'px';
+        canvas.style.height = '100%';
+        canvas.style.display = 'block';
+
+        const dataset = {
+          label: labels_[index],
+          data: dataSets[index],
+          borderColor: colors[index],
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          pointRadius: 4,
+          pointHoverRadius: 7,
+          pointBackgroundColor: colors[index],
+          pointBorderColor: '#ffffff'
+        };
+        if (borderDash[index]) {
+          dataset.borderDash = borderDash[index];
+        }
+
+        const chart = new Chart(ctx, {
+          type: 'line',
+          data: { labels: labels, datasets: [dataset] },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: { color: '#ffffff', font: { size: 12 } }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    let label = context.dataset.label || '';
+                    let value = context.parsed.y;
+                    if (context.dataset.label === 'METAスコア') {
+                      return label + ': ' + value.toFixed(0);
+                    }
+                    return label + ': ' + value.toFixed(1) + '%';
+                  }
+                }
+              },
+              datalabels: {
+                color: '#ffffff',
+                anchor: 'end',
+                align: 'top',
+                font: { size: 9, weight: 'bold' },
+                offset: 3,
+                formatter: function(value, context) {
+                  if (context.dataset.label === 'METAスコア') {
+                    return value.toFixed(0);
+                  }
+                  return value.toFixed(1);
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              },
+              y: {
+                min: ranges[index].min,
+                max: ranges[index].max,
+                ticks: { color: '#ffffff' },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              }
+            }
+          },
+          plugins: [ChartDataLabels]
+        });
+
+        chartInstances[chartTypes[index]] = chart;
+      }
+
+      // ライブラリ読み込み（Chart.js, DataLabels）のラッパー
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
@@ -502,142 +612,26 @@ export async function onRequest(context) {
           s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
             console.log('DataLabels loaded');
-            renderChart();
+            renderAllCharts();
           };
           document.head.appendChild(s);
         } else {
-          renderChart();
+          renderAllCharts();
         }
       }
 
-      function renderChart() {
-        const canvas = document.getElementById('historyChart');
-        const wrapper = document.getElementById('scrollWrapper');
-
-        // ★ Canvas の幅を設定
-        if (canvas) {
-          canvas.width = baseWidth;
-          canvas.style.width = baseWidth + 'px';
-          canvas.style.height = '100%';
-          canvas.style.display = 'block';
+      function renderAllCharts() {
+        // 4つのグラフを順に作成
+        for (let i = 0; i < 4; i++) {
+          loadChart(i);
         }
-
-        // ★ ラッパーの幅を設定（スクロールバーを表示させる）
+        // スクロールラッパーの幅を設定
+        const wrapper = document.getElementById('scrollWrapper');
         if (wrapper) {
           wrapper.style.width = baseWidth + 'px';
           wrapper.style.minWidth = '100%';
         }
-
-        historyChartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                label: '勝率 (%)',
-                data: winData,
-                borderColor: '#7ee787',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#7ee787',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'PICK率 (%)',
-                data: pickData,
-                borderColor: '#7ab7ff',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#7ab7ff',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'BAN率 (%)',
-                data: banData,
-                borderColor: '#ff7a7a',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#ff7a7a',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'META (×10)',
-                data: metaScaled,
-                borderColor: '#fbbf24',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                borderDash: [5, 5],
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#fbbf24',
-                pointBorderColor: '#ffffff'
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                labels: {
-                  color: '#ffffff',
-                  font: { size: 12 }
-                }
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    let label = context.dataset.label || '';
-                    let value = context.parsed.y;
-                    if (context.dataset.label === 'META (×10)') {
-                      return label + ': ' + (value * 10).toFixed(0);
-                    }
-                    return label + ': ' + value.toFixed(1) + '%';
-                  }
-                }
-              },
-              datalabels: {
-                color: '#ffffff',
-                anchor: 'end',
-                align: 'top',
-                font: { size: 10, weight: 'bold' },
-                offset: 4,
-                formatter: function(value, context) {
-                  var datasetLabel = context.dataset.label;
-                  if (datasetLabel === 'META (×10)') {
-                    return (value * 10).toFixed(0);
-                  }
-                  return value.toFixed(1);
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-              },
-              y: {
-                min: -50,
-                max: 150,
-                ticks: { color: '#ffffff' },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-              }
-            }
-          },
-          plugins: [ChartDataLabels]
-        });
-
-        console.log('Chart rendered: ' + labels.length + ' weeks, width: ' + baseWidth + 'px');
+        console.log('4 charts rendered');
       }
 
       loadLibraries();
@@ -645,9 +639,11 @@ export async function onRequest(context) {
 
     function closeHistoryModal() {
       document.getElementById('historyModal').style.display = 'none';
-      if (historyChartInstance) {
-        historyChartInstance.destroy();
-        historyChartInstance = null;
+      for (let key in chartInstances) {
+        if (chartInstances[key]) {
+          chartInstances[key].destroy();
+          chartInstances[key] = null;
+        }
       }
     }
 
@@ -893,7 +889,7 @@ button:hover {
   margin: 10px 0 20px;
 }
 
-/* ===== スクロールバー用 ===== */
+/* ===== モーダル（縦スクロール対応） ===== */
 #historyModal {
   display: none;
   position: fixed;
@@ -907,9 +903,9 @@ button:hover {
 }
 #historyModal .modal-content {
   background: #1a1f2e;
-  max-width: 750px;
+  max-width: 850px;
   width: 92%;
-  margin: 40px auto;
+  margin: 30px auto;
   padding: 24px;
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.08);
@@ -940,21 +936,28 @@ button:hover {
 #historyModal .modal-close:hover {
   opacity: 1;
 }
-#historyModal .chart-container {
-  position: relative;
-  height: 320px;
-  overflow: visible;
+#historyModal .charts-container {
+  display: none;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 10px;
 }
 #historyModal .scroll-wrapper {
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 100%;
+}
+#historyModal .chart-item {
+  height: 160px;
+  min-height: 160px;
   width: 100%;
 }
-#historyModal .scroll-wrapper canvas {
+#historyModal .chart-item canvas {
   display: block;
   height: 100%;
+  width: 100%;
 }
 #historyModal .loading-text {
   text-align: center;
@@ -1036,16 +1039,20 @@ button:hover {
   <div class="footer">META ANALYTICS DASHBOARD</div>
 </div>
 
+<!-- ===== 履歴モーダル（4グラフ） ===== -->
 <div id="historyModal">
   <div class="modal-content">
     <div class="modal-header">
-      <h2 id="modalTitle">キャラクター履歴（16週）</h2>
+      <h2 id="modalTitle">キャラクター履歴</h2>
       <span class="modal-close" id="modalClose">&times;</span>
     </div>
-    <div class="chart-container">
-      <div class="loading-text" id="historyLoading">⏳ データを読み込み中...</div>
+    <div class="loading-text" id="historyLoading">⏳ データを読み込み中...</div>
+    <div class="charts-container" id="chartsContainer">
       <div class="scroll-wrapper" id="scrollWrapper">
-        <canvas id="historyChart" style="display:none; height:100%;"></canvas>
+        <div class="chart-item"><canvas id="winChart"></canvas></div>
+        <div class="chart-item"><canvas id="pickChart"></canvas></div>
+        <div class="chart-item"><canvas id="banChart"></canvas></div>
+        <div class="chart-item"><canvas id="metaChart"></canvas></div>
       </div>
     </div>
   </div>
