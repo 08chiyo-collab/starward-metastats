@@ -427,7 +427,7 @@ export async function onRequest(context) {
       }
 
       modal.style.display = 'block';
-      title.textContent = charName + ' の履歴（16週）';
+      title.textContent = charName + ' の履歴（過去16週）';
       loading.style.display = 'block';
       chartsContainer.style.display = 'none';
 
