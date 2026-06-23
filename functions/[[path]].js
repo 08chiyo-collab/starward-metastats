@@ -41,6 +41,36 @@ export async function onRequest(context) {
   if (url.pathname === '/image') {
     return await getImage(request);
   }
+  export async function onRequest(context) {
+  const { request } = context;
+  const url = new URL(request.url);
+
+  // 画像プロキシルート
+  if (url.pathname === '/image') {
+    return await getImage(request);
+  }
+
+  // ============================================
+  // faviconルート（ヴォイドセーバーの画像）
+  // ============================================
+  if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.png') {
+    const imageUrl = 'https://sres.shengtiangames.com/uploads/publisher/60272a4a190dd024f74948bfde765f5a.png';
+    const response = await fetch(imageUrl, {
+      headers: {
+        'Referer': 'https://sres.shengtiangames.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    if (!response.ok) {
+      return new Response('Not found', { status: 404 });
+    }
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'public, max-age=86400');
+    headers.set('Content-Type', 'image/x-icon');
+    return new Response(response.body, { status: 200, headers: headers });
+  }
+
+  // 以降、既存のメタ統計表示処理（そのまま）...
 
   // -----------------------------
   // クエリパラメータ
