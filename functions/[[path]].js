@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // Chart.js 4.x + Zoom 2.x 版（正しいオプション）
+  // 修正済み exportScript（Chart.js 4.x + Zoom 2.x 正しい構造）
   // ============================================
   const exportScript = `
   <script>
@@ -527,6 +527,7 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
+        // ★ 正しい構造（修正済み）
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -619,7 +620,7 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ Chart.js 4.x + Zoom 2.x 正しい構造
+              // ★ 正しい構造（修正済み）
               zoom: {
                 pan: {
                   enabled: true,
@@ -627,15 +628,14 @@ export async function onRequest(context) {
                   modifierKey: null   // 修飾キーなしでドラッグ
                 },
                 zoom: {
-                  enabled: true,
-                  mode: 'xy',
                   wheel: {
                     enabled: true,
                     speed: 0.05
                   },
+                  mode: 'xy',
                   limits: {
                     x: { minRange: 1, max: 16 },
-                    y: { minRange: 5, max: 100 }   // ← 縦軸ズーム制限
+                    y: { minRange: 5, max: 100 }
                   }
                 }
               }
@@ -655,7 +655,7 @@ export async function onRequest(context) {
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with Chart.js 4.x + Zoom 2.x');
+        console.log('Chart rendered with Chart.js 4.x + Zoom 2.x (corrected)');
         console.log('Zoom limits:', historyChartInstance.options.plugins.zoom.zoom.limits);
       }
 
