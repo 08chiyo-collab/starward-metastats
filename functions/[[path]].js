@@ -120,7 +120,7 @@ function computeMetaScores(data) {
 }
 
 // ============================================
-// 履歴データ取得API（選択週を起点に過去8週）
+// 履歴データ取得API（選択週を基準に過去8週）
 // ============================================
 async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
   const MAX_WEEKS = 8;
@@ -329,7 +329,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // ★ 修正済み exportScript（履歴グラフ機能強化）★
+  // 完全修正済み exportScript
   // ============================================
   const exportScript = `
   <script>
@@ -422,7 +422,7 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能（ズーム・パン対応・塗りつぶしなし）
+    // 履歴グラフ機能（完全改善版）
     // ========================
     let historyChartInstance = null;
 
@@ -470,13 +470,17 @@ export async function onRequest(context) {
         historyChartInstance = null;
       }
 
+      // データがnullの週を除去
       const filteredData = data.filter(d => d.win_rate !== null);
       if (filteredData.length === 0) {
         alert('このキャラクターの履歴データがありません');
         return;
       }
 
-      const labels = filteredData.map(d => {
+      // ★ 横軸：左が新しい週、右が古い週になるよう逆順に
+      const reversedData = [...filteredData].reverse();
+
+      const labels = reversedData.map(d => {
         const parts = d.week.split(' - ');
         if (parts.length === 2) {
           return parts[0].replace(/\\\\/g, '/');
@@ -484,10 +488,10 @@ export async function onRequest(context) {
         return d.week;
       });
 
-      const winData = filteredData.map(d => d.win_rate);
-      const pickData = filteredData.map(d => d.pick_rate);
-      const banData = filteredData.map(d => d.ban_rate);
-      const metaData = filteredData.map(d => d.meta_score);
+      const winData = reversedData.map(d => d.win_rate);
+      const pickData = reversedData.map(d => d.pick_rate);
+      const banData = reversedData.map(d => d.ban_rate);
+      const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
       function loadChartAndRender() {
@@ -495,18 +499,17 @@ export async function onRequest(context) {
           const script = document.createElement('script');
           script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
           script.onload = function() {
-            // Zoomプラグインも読み込む
-            const scriptZoom = document.createElement('script');
-            scriptZoom.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
-            scriptZoom.onload = function() {
-              const script2 = document.createElement('script');
-              script2.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
-              script2.onload = function() {
+            const script2 = document.createElement('script');
+            script2.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
+            script2.onload = function() {
+              const script3 = document.createElement('script');
+              script3.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
+              script3.onload = function() {
                 renderChart();
               };
-              document.head.appendChild(script2);
+              document.head.appendChild(script3);
             };
-            document.head.appendChild(scriptZoom);
+            document.head.appendChild(script2);
           };
           document.head.appendChild(script);
         } else {
@@ -515,18 +518,6 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // プラグインが読み込まれているか確認（Zoomプラグインは動的読み込みの場合グローバルに登録される）
-        const zoomPlugin = typeof ChartZoom !== 'undefined' ? ChartZoom : 
-                           (typeof window.ChartZoom !== 'undefined' ? window.ChartZoom : null);
-
-        const plugins = [];
-        if (typeof ChartDataLabels !== 'undefined') {
-          plugins.push(ChartDataLabels);
-        }
-        if (zoomPlugin) {
-          plugins.push(zoomPlugin);
-        }
-
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -538,8 +529,11 @@ export async function onRequest(context) {
                 borderColor: '#7ee787',
                 backgroundColor: 'transparent',
                 fill: false,
-                tension: 0.3,
-                pointRadius: 4
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#7ee787',
+                pointBorderColor: '#ffffff'
               },
               {
                 label: 'PICK率 (%)',
@@ -547,8 +541,11 @@ export async function onRequest(context) {
                 borderColor: '#7ab7ff',
                 backgroundColor: 'transparent',
                 fill: false,
-                tension: 0.3,
-                pointRadius: 4
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#7ab7ff',
+                pointBorderColor: '#ffffff'
               },
               {
                 label: 'BAN率 (%)',
@@ -556,8 +553,11 @@ export async function onRequest(context) {
                 borderColor: '#ff7a7a',
                 backgroundColor: 'transparent',
                 fill: false,
-                tension: 0.3,
-                pointRadius: 4
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#ff7a7a',
+                pointBorderColor: '#ffffff'
               },
               {
                 label: 'META (×10)',
@@ -565,9 +565,12 @@ export async function onRequest(context) {
                 borderColor: '#fbbf24',
                 backgroundColor: 'transparent',
                 fill: false,
-                tension: 0.3,
+                tension: 0,
                 borderDash: [5, 5],
-                pointRadius: 4
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#fbbf24',
+                pointBorderColor: '#ffffff'
               }
             ]
           },
@@ -593,51 +596,54 @@ export async function onRequest(context) {
                   }
                 }
               },
+              datalabels: {
+                color: '#ffffff',
+                anchor: 'end',
+                align: 'top',
+                font: { size: 10, weight: 'bold' },
+                offset: 4,
+                formatter: function(value, context) {
+                  var datasetLabel = context.dataset.label;
+                  if (datasetLabel === 'META (×10)') {
+                    return (value * 10).toFixed(0);
+                  }
+                  return value.toFixed(1);
+                }
+              },
               zoom: {
+                pan: {
+                  enabled: true,
+                  mode: 'xy',
+                  modifierKey: null  // Shift不要、左クリックだけでドラッグ可能
+                },
                 zoom: {
                   wheel: {
                     enabled: true,
                     speed: 0.05,
-                    modifierKey: null
+                    modifierKey: null  // ホイールのみでズーム
                   },
-                  pinch: {
-                    enabled: true
-                  },
-                  mode: 'x',
-                },
-                pan: {
-                  enabled: true,
-                  mode: 'x',
-                  modifierKey: 'shift'
+                  mode: 'xy'
                 },
                 limits: {
-                  x: { minRange: 2 }
+                  x: { minRange: 2 },
+                  y: { minRange: 5 }
                 }
               }
             },
             scales: {
               x: {
-                ticks: {
-                  color: '#ffffff',
-                  maxRotation: 0,
-                  font: { size: 10 },
-                  autoSkip: true,
-                  maxTicksLimit: 12
-                },
+                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
                 grid: { color: 'rgba(255,255,255,0.05)' }
               },
               y: {
-                ticks: {
-                  color: '#ffffff',
-                  font: { size: 10 }
-                },
+                ticks: { color: '#ffffff' },
                 grid: { color: 'rgba(255,255,255,0.05)' },
                 beginAtZero: true,
                 max: 100
               }
             }
           },
-          plugins: plugins
+          plugins: [ChartDataLabels, ChartZoom]
         });
       }
 
