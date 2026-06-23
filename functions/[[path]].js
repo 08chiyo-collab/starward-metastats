@@ -546,7 +546,7 @@ export async function onRequest(context) {
           plugins.push(ChartZoom);
         }
 
-        // ★ 修正：ズーム設定を charts の options に直接記述（正しい方法）
+        // ★ 修正：pan の modifierKey を null に設定
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -606,7 +606,6 @@ export async function onRequest(context) {
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            // ★ ズーム設定を options 直下に配置（正しい Chart.js 4.x の方法）
             plugins: {
               legend: {
                 labels: {
@@ -640,11 +639,12 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ Zoomプラグインの設定（正しい構造）
+              // ★ 修正：modifierKey: null を追加、limits を調整
               zoom: {
                 pan: {
                   enabled: true,
-                  mode: 'xy'
+                  mode: 'xy',
+                  modifierKey: null  // ← これが効かない場合は 'ctrl' などに変更
                 },
                 zoom: {
                   wheel: {
@@ -654,7 +654,7 @@ export async function onRequest(context) {
                   mode: 'xy',
                   limits: {
                     x: { minRange: 1, max: 16 },
-                    y: { minRange: 5, max: 100 }  // ← 縦軸のズーム制限
+                    y: { minRange: 5, max: 100 }
                   }
                 }
               }
@@ -675,7 +675,7 @@ export async function onRequest(context) {
           plugins: plugins
         });
         chartReady = true;
-        console.log('Chart rendered, zoom limits set: y.max=100');
+        console.log('Chart rendered with pan.modifierKey=null');
       }
 
       loadChartDependencies();
