@@ -31,7 +31,7 @@ async function getImage(request) {
 }
 
 // ============================================
-// 週リスト取得関数（再利用可能）
+// 週リスト取得関数
 // ============================================
 async function getWeeksList() {
   const LIST_API = "https://xzy.shengtiangames.com/mini-game/xzy/battle-record/hot-rank-list";
@@ -53,7 +53,7 @@ async function getWeeksList() {
 }
 
 // ============================================
-// ランキングデータ取得関数（再利用可能）
+// ランキングデータ取得関数
 // ============================================
 async function fetchRankingData(listId, ttScore, mode = 'win_rate') {
   const API_URL =
@@ -79,7 +79,7 @@ async function fetchRankingData(listId, ttScore, mode = 'win_rate') {
 }
 
 // ============================================
-// メタスコア計算関数（再利用可能）
+// メタスコア計算関数
 // ============================================
 function calcStats(arr) {
   const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -129,7 +129,6 @@ async function getCharacterHistory(charName, ttScore, weeks) {
 
   for (const week of targetWeeks) {
     const data = await fetchRankingData(week.id, ttScore);
-    // メタスコアを計算
     const dataWithMeta = computeMetaScores(data);
     const charData = dataWithMeta.find(d => d.role?.name_jp === charName || d.role?.english_name === charName);
 
@@ -142,7 +141,6 @@ async function getCharacterHistory(charName, ttScore, weeks) {
         meta_score: Math.round((charData.metaScore || 0) * 100)
       });
     } else {
-      // データがない週はnull（グラフでスキップ）
       history.push({
         week: week.name || `#${week.id}`,
         win_rate: null,
@@ -168,7 +166,7 @@ export async function onRequest(context) {
     return await getImage(request);
   }
 
-  // faviconルート（ヴォイドセーバーの画像）
+  // faviconルート（ヴォイドセーバー）
   if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.png') {
     const imageUrl = 'https://sres.shengtiangames.com/uploads/publisher/60272a4a190dd024f74948bfde765f5a.png';
     const response = await fetch(imageUrl, {
@@ -186,9 +184,7 @@ export async function onRequest(context) {
     return new Response(response.body, { status: 200, headers: headers });
   }
 
-  // ============================================
   // 履歴データAPI
-  // ============================================
   if (url.pathname === '/api/history') {
     const charName = url.searchParams.get('char');
     const scoreParam = url.searchParams.get('score') || '8000+';
@@ -220,7 +216,7 @@ export async function onRequest(context) {
   }
 
   // -----------------------------
-  // クエリパラメータ（メイン表示）
+  // メイン表示（クエリパラメータ）
   // -----------------------------
   const rawScore = decodeURIComponent(
     url.searchParams.get("score") || "8000+"
@@ -234,9 +230,6 @@ export async function onRequest(context) {
   const debug = url.searchParams.get("debug") === "1";
   const selectedWeekId = url.searchParams.get("week") || null;
 
-  // -----------------------------
-  // tt_score変換
-  // -----------------------------
   let tt_score;
   if (scoreParam === "8000+" || scoreParam.includes("8000+") || scoreParam === "8000") {
     tt_score = "≥8000";
@@ -244,9 +237,6 @@ export async function onRequest(context) {
     tt_score = "≥6000，＜8000";
   }
 
-  // -----------------------------
-  // 全週リストを取得
-  // -----------------------------
   const weeks = await getWeeksList();
 
   if (weeks.length === 0) {
@@ -262,15 +252,9 @@ export async function onRequest(context) {
   const listId = activeWeek.id;
   const weekName = activeWeek.name || `週次 #${listId}`;
 
-  // -----------------------------
-  // ランキングデータ取得＋メタスコア計算
-  // -----------------------------
   const rawData = await fetchRankingData(listId, tt_score, mode);
   const dataWithMeta = computeMetaScores(rawData);
 
-  // -----------------------------
-  // デバッグ
-  // -----------------------------
   if (debug) {
     return new Response(JSON.stringify({
       selected_week: listId,
@@ -292,9 +276,6 @@ export async function onRequest(context) {
     return new Response("指定された週のデータがありません", { status: 500 });
   }
 
-  // -----------------------------
-  // ソート
-  // -----------------------------
   const sorted = dataWithMeta.sort((a, b) => {
     let valA, valB;
     if (mode === 'meta_score') {
@@ -309,18 +290,12 @@ export async function onRequest(context) {
 
   const newOrder = order === "asc" ? "desc" : "asc";
 
-  // -----------------------------
-  // セレクトボックス
-  // -----------------------------
   const weekOptions = weeks.map(w => {
     const selected = w.id === activeWeek.id ? 'selected' : '';
     const label = `#${w.id} ${w.name || ''}`;
     return `<option value="${w.id}" ${selected}>${label}</option>`;
   }).join("");
 
-  // -----------------------------
-  // テーブル行（キャラ名にクリックイベント付与）
-  // -----------------------------
   const rows = sorted.map((x, i) => {
     const r = x.role || {};
     const iconUrl = r.avatar_link || "";
@@ -334,7 +309,7 @@ export async function onRequest(context) {
         <td class="rank">${i + 1}</td>
         <td>
           <div class="char">
-            <span class="char-name" data-char="${charName}" style="cursor:pointer;">${charName}</span>
+            <span class="char-name" data-char="${charName}">${charName}</span>
             <img src="${proxyUrl}" loading="lazy" decoding="async" onerror="this.src='https://via.placeholder.com/44/4a6cff/ffffff?text=?'">
           </div>
         </td>
@@ -346,13 +321,10 @@ export async function onRequest(context) {
     `;
   }).join("");
 
-  // -----------------------------
-  // エクスポート＆履歴機能スクリプト
-  // -----------------------------
   const exportScript = `
   <script>
     // ========================
-    // テーブルデータ取得
+    // テーブルデータ取得（エクスポート用）
     // ========================
     function getTableData() {
       const rows = document.querySelectorAll('#rankTable tbody tr');
@@ -432,7 +404,7 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能
+    // 履歴グラフ機能（イベントデリゲーション版）
     // ========================
     let historyChartInstance = null;
 
@@ -442,16 +414,17 @@ export async function onRequest(context) {
       const canvas = document.getElementById('historyChart');
       const loading = document.getElementById('historyLoading');
 
-      // モーダルを表示
       modal.style.display = 'block';
       title.textContent = charName + ' の履歴';
       loading.style.display = 'block';
       canvas.style.display = 'none';
 
-      // データ取得
       const scoreParam = new URLSearchParams(window.location.search).get('score') || '8000+';
       fetch('/api/history?char=' + encodeURIComponent(charName) + '&score=' + encodeURIComponent(scoreParam))
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error('Network response was not ok');
+          return res.json();
+        })
         .then(data => {
           loading.style.display = 'none';
           canvas.style.display = 'block';
@@ -466,20 +439,21 @@ export async function onRequest(context) {
     function buildHistoryChart(data, charName) {
       const ctx = document.getElementById('historyChart').getContext('2d');
 
-      // 既存のチャートを破棄
       if (historyChartInstance) {
         historyChartInstance.destroy();
         historyChartInstance = null;
       }
 
-      // データがnullの週を除外（グラフの欠損を防ぐ）
       const filteredData = data.filter(d => d.win_rate !== null);
+      if (filteredData.length === 0) {
+        alert('このキャラクターの履歴データがありません');
+        return;
+      }
 
-      // 週ラベルを短縮（日付部分だけ表示）
       const labels = filteredData.map(d => {
         const parts = d.week.split(' - ');
         if (parts.length === 2) {
-          return parts[0].replace(/\\/g, '/'); // 例: 2026/06/11
+          return parts[0].replace(/\\/g, '/');
         }
         return d.week;
       });
@@ -488,11 +462,8 @@ export async function onRequest(context) {
       const pickData = filteredData.map(d => d.pick_rate);
       const banData = filteredData.map(d => d.ban_rate);
       const metaData = filteredData.map(d => d.meta_score);
-
-      // メタスコアのスケールを調整（他の指標と合わせるため）
       const metaScaled = metaData.map(v => v / 10);
 
-      // Chart.js と datalabels を動的読み込み
       function loadChartAndRender() {
         if (typeof Chart === 'undefined') {
           const script = document.createElement('script');
@@ -599,9 +570,6 @@ export async function onRequest(context) {
       loadChartAndRender();
     }
 
-    // ========================
-    // モーダル制御
-    // ========================
     function closeHistoryModal() {
       document.getElementById('historyModal').style.display = 'none';
       if (historyChartInstance) {
@@ -610,37 +578,40 @@ export async function onRequest(context) {
       }
     }
 
-    // キャラ名クリックイベント
-    document.addEventListener('DOMContentLoaded', function() {
-      document.querySelectorAll('.char-name').forEach(el => {
-        el.addEventListener('click', function(e) {
-          e.stopPropagation();
-          const charName = this.textContent.trim();
-          if (charName) {
-            openHistoryModal(charName);
-          }
-        });
-      });
+    // ========================
+    // イベントリスナー（イベントデリゲーション）
+    // ========================
+    document.addEventListener('click', function(e) {
+      const target = e.target.closest('.char-name');
+      if (target) {
+        e.stopPropagation();
+        const charName = target.textContent.trim();
+        if (charName) {
+          openHistoryModal(charName);
+        }
+      }
+    });
 
-      // モーダル閉じる
-      document.getElementById('modalClose').addEventListener('click', closeHistoryModal);
-      document.getElementById('historyModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-          closeHistoryModal();
-        }
-      });
-      document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-          closeHistoryModal();
-        }
-      });
+    document.addEventListener('click', function(e) {
+      if (e.target === document.getElementById('historyModal')) {
+        closeHistoryModal();
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeHistoryModal();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (e.target.id === 'modalClose') {
+        closeHistoryModal();
+      }
     });
   </script>
   `;
 
-  // -----------------------------
-  // HTMLレスポンス（モーダル追加）
-  // -----------------------------
   return new Response(`
 <!DOCTYPE html>
 <html>
