@@ -518,137 +518,158 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        historyChartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                label: '勝率 (%)',
-                data: winData,
-                borderColor: '#7ee787',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#7ee787',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'PICK率 (%)',
-                data: pickData,
-                borderColor: '#7ab7ff',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#7ab7ff',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'BAN率 (%)',
-                data: banData,
-                borderColor: '#ff7a7a',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#ff7a7a',
-                pointBorderColor: '#ffffff'
-              },
-              {
-                label: 'META (×10)',
-                data: metaScaled,
-                borderColor: '#fbbf24',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                borderDash: [5, 5],
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                pointBackgroundColor: '#fbbf24',
-                pointBorderColor: '#ffffff'
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                labels: {
-                  color: '#ffffff',
-                  font: { size: 12 }
-                }
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    let label = context.dataset.label || '';
-                    let value = context.parsed.y;
-                    if (context.dataset.label === 'META (×10)') {
-                      return label + ': ' + (value * 10).toFixed(0);
-                    }
-                    return label + ': ' + value.toFixed(1) + '%';
-                  }
-                }
-              },
-              datalabels: {
-                color: '#ffffff',
-                anchor: 'end',
-                align: 'top',
-                font: { size: 10, weight: 'bold' },
-                offset: 4,
-                formatter: function(value, context) {
-                  var datasetLabel = context.dataset.label;
-                  if (datasetLabel === 'META (×10)') {
-                    return (value * 10).toFixed(0);
-                  }
-                  return value.toFixed(1);
-                }
-              },
-              zoom: {
-                pan: {
-                  enabled: true,
-                  mode: 'xy',
-                  modifierKey: null  // Shift不要、左クリックだけでドラッグ可能
-                },
-                zoom: {
-                  wheel: {
-                    enabled: true,
-                    speed: 0.05,
-                    modifierKey: null  // ホイールのみでズーム
-                  },
-                  mode: 'xy'
-                },
-                limits: {
-                  x: { minRange: 2 },
-                  y: { minRange: 5 }
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
-                grid: { color: 'rgba(255,255,255,0.05)' }
-              },
-              y: {
-                ticks: { color: '#ffffff' },
-                grid: { color: 'rgba(255,255,255,0.05)' },
-                beginAtZero: true,
-                max: 100
-              }
-            }
-          },
-          plugins: [ChartDataLabels, ChartZoom]
-        });
+  // ============================================
+  // ★ ChartZoom の登録（確実に動作させる）
+  // ============================================
+  try {
+    if (typeof Chart !== 'undefined') {
+      if (typeof ChartDataLabels !== 'undefined' && !Chart.registry.plugins.get('datalabels')) {
+        Chart.register(ChartDataLabels);
       }
-
-      loadChartAndRender();
+      if (typeof ChartZoom !== 'undefined' && !Chart.registry.plugins.get('zoom')) {
+        Chart.register(ChartZoom);
+      }
     }
+  } catch (e) {
+    console.warn('Plugin registration failed:', e);
+  }
+
+  // ============================================
+  // ★ チャート作成（zoom 設定は options.plugins 内に直接記述）
+  // ============================================
+  historyChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '勝率 (%)',
+          data: winData,
+          borderColor: '#7ee787',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+          pointBackgroundColor: '#7ee787',
+          pointBorderColor: '#ffffff'
+        },
+        {
+          label: 'PICK率 (%)',
+          data: pickData,
+          borderColor: '#7ab7ff',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+          pointBackgroundColor: '#7ab7ff',
+          pointBorderColor: '#ffffff'
+        },
+        {
+          label: 'BAN率 (%)',
+          data: banData,
+          borderColor: '#ff7a7a',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+          pointBackgroundColor: '#ff7a7a',
+          pointBorderColor: '#ffffff'
+        },
+        {
+          label: 'META (×10)',
+          data: metaScaled,
+          borderColor: '#fbbf24',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          borderDash: [5, 5],
+          pointRadius: 5,
+          pointHoverRadius: 8,
+          pointBackgroundColor: '#fbbf24',
+          pointBorderColor: '#ffffff'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: '#ffffff',
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              let value = context.parsed.y;
+              if (context.dataset.label === 'META (×10)') {
+                return label + ': ' + (value * 10).toFixed(0);
+              }
+              return label + ': ' + value.toFixed(1) + '%';
+            }
+          }
+        },
+        // ============================================
+        // ★ datalabels 設定（点の上に白文字表示）
+        // ============================================
+        datalabels: {
+          color: '#ffffff',
+          anchor: 'end',
+          align: 'top',
+          font: { size: 10, weight: 'bold' },
+          offset: 4,
+          formatter: function(value, context) {
+            var datasetLabel = context.dataset.label;
+            if (datasetLabel === 'META (×10)') {
+              return (value * 10).toFixed(0);
+            }
+            return value.toFixed(1);
+          }
+        },
+        // ============================================
+        // ★ zoom 設定（ここに直接書く）
+        // ============================================
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: 'xy'
+            // modifierKey は省略（修飾キーなしでドラッグ可能）
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.05
+            },
+            mode: 'xy'
+          },
+          limits: {
+            x: { minRange: 2 },
+            y: { minRange: 5 }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#ffffff', maxRotation: 45, font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        y: {
+          ticks: { color: '#ffffff' },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          beginAtZero: true,
+          max: 100
+        }
+      }
+    },
+    plugins: []  // ← plugins 配列は空でOK（Chart.register で登録済み）
+  });
+}
 
     function closeHistoryModal() {
       document.getElementById('historyModal').style.display = 'none';
