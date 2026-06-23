@@ -123,7 +123,7 @@ function computeMetaScores(data) {
 // 履歴データ取得API（選択週を基準に過去16週）
 // ============================================
 async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
-  const MAX_WEEKS = 16;  // ← 8→16に変更
+  const MAX_WEEKS = 16;
   let startIndex = 0;
   if (selectedWeekId) {
     const foundIndex = weeks.findIndex(w => w.id.toString() === selectedWeekId);
@@ -329,7 +329,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 完全修正済み exportScript（16週・ズーム制限付き）
+  // 完全修正済み exportScript
   // ============================================
   const exportScript = `
   <script>
@@ -422,7 +422,7 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // 履歴グラフ機能（16週・ズーム・パン完全対応）
+    // 履歴グラフ機能（16週・ズーム制限・ドラッグ修正）
     // ========================
     let historyChartInstance = null;
     let chartReady = false;
@@ -471,14 +471,13 @@ export async function onRequest(context) {
         historyChartInstance = null;
       }
 
-      // データがnullの週を除去
       const filteredData = data.filter(d => d.win_rate !== null);
       if (filteredData.length === 0) {
         alert('このキャラクターの履歴データがありません');
         return;
       }
 
-      // 横軸：左が新しい週、右が古い週になるよう逆順に
+      // 横軸：左が新しい週、右が古い週
       const reversedData = [...filteredData].reverse();
 
       const labels = reversedData.map(d => {
@@ -495,15 +494,15 @@ export async function onRequest(context) {
       const metaData = reversedData.map(d => d.meta_score);
       const metaScaled = metaData.map(v => v / 10);
 
-      function loadChartAndRender() {
-        // Chart.js 本体を読み込み
+      // Chart.js 本体 + プラグインを読み込み
+      function loadChartDependencies() {
         if (typeof Chart === 'undefined') {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-          script.onload = function() {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js';
+          s.onload = function() {
             loadDataLabels();
           };
-          document.head.appendChild(script);
+          document.head.appendChild(s);
         } else {
           loadDataLabels();
         }
@@ -511,12 +510,12 @@ export async function onRequest(context) {
 
       function loadDataLabels() {
         if (typeof ChartDataLabels === 'undefined') {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
-          script.onload = function() {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';
+          s.onload = function() {
             loadZoomPlugin();
           };
-          document.head.appendChild(script);
+          document.head.appendChild(s);
         } else {
           loadZoomPlugin();
         }
@@ -524,34 +523,30 @@ export async function onRequest(context) {
 
       function loadZoomPlugin() {
         if (typeof ChartZoom === 'undefined') {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
-          script.onload = function() {
-            console.log('ChartZoom loaded successfully');
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js';
+          s.onload = function() {
+            console.log('ChartZoom loaded');
             renderChart();
           };
-          script.onerror = function() {
-            console.error('Failed to load ChartZoom');
-            // それでもレンダリング（ズームなしで）
+          s.onerror = function() {
+            console.warn('ChartZoom load failed');
             renderChart();
           };
-          document.head.appendChild(script);
+          document.head.appendChild(s);
         } else {
-          console.log('ChartZoom already loaded');
+          console.log('ChartZoom already exists');
           renderChart();
         }
       }
 
       function renderChart() {
-        // プラグインを準備
         const plugins = [ChartDataLabels];
         if (typeof ChartZoom !== 'undefined') {
           plugins.push(ChartZoom);
-          console.log('ChartZoom registered');
-        } else {
-          console.warn('ChartZoom is not available; zoom/pan disabled');
         }
 
+        // ★ 修正：ズーム設定を charts の options に直接記述（正しい方法）
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -611,6 +606,7 @@ export async function onRequest(context) {
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            // ★ ズーム設定を options 直下に配置（正しい Chart.js 4.x の方法）
             plugins: {
               legend: {
                 labels: {
@@ -644,11 +640,11 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
+              // ★ Zoomプラグインの設定（正しい構造）
               zoom: {
                 pan: {
                   enabled: true,
                   mode: 'xy'
-                  // modifierKey を省略 → 修飾キーなしでドラッグ
                 },
                 zoom: {
                   wheel: {
@@ -657,8 +653,8 @@ export async function onRequest(context) {
                   },
                   mode: 'xy',
                   limits: {
-                    x: { minRange: 1, max: 16 },  // 最大16週分までズームアウト可能
-                    y: { minRange: 5, max: 100 }
+                    x: { minRange: 1, max: 16 },
+                    y: { minRange: 5, max: 100 }  // ← 縦軸のズーム制限
                   }
                 }
               }
@@ -679,10 +675,10 @@ export async function onRequest(context) {
           plugins: plugins
         });
         chartReady = true;
-        console.log('Chart rendered with zoom plugin:', typeof ChartZoom !== 'undefined');
+        console.log('Chart rendered, zoom limits set: y.max=100');
       }
 
-      loadChartAndRender();
+      loadChartDependencies();
     }
 
     function closeHistoryModal() {
@@ -695,12 +691,11 @@ export async function onRequest(context) {
     }
 
     // ========================
-    // イベントリスナー（DOMContentLoaded内）
+    // イベントリスナー
     // ========================
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOMContentLoaded fired!');
 
-      // テーブルにイベントデリゲーション
       var table = document.querySelector('#rankTable');
       if (table) {
         table.addEventListener('click', function(e) {
@@ -708,39 +703,27 @@ export async function onRequest(context) {
           if (target) {
             e.stopPropagation();
             var charName = target.textContent.trim();
-            console.log('Clicked char:', charName);
             if (charName) {
               openHistoryModal(charName);
             }
           }
         });
-      } else {
-        console.error('rankTable not found!');
       }
 
-      // モーダル背景クリック
       var modal = document.getElementById('historyModal');
       if (modal) {
         modal.addEventListener('click', function(e) {
-          if (e.target === this) {
-            closeHistoryModal();
-          }
+          if (e.target === this) closeHistoryModal();
         });
       }
 
-      // 閉じるボタン
       var closeBtn = document.getElementById('modalClose');
       if (closeBtn) {
-        closeBtn.addEventListener('click', function(e) {
-          closeHistoryModal();
-        });
+        closeBtn.addEventListener('click', closeHistoryModal);
       }
 
-      // ESCキー
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-          closeHistoryModal();
-        }
+        if (e.key === 'Escape') closeHistoryModal();
       });
     });
   </script>
