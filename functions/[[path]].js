@@ -326,7 +326,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 修正済み exportScript（正しいZoomオプション構造）
+  // Chart.js 4.x + Zoom 2.x 版（正しいオプション）
   // ============================================
   const exportScript = `
   <script>
@@ -480,9 +480,9 @@ export async function onRequest(context) {
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js?v=' + CACHE_BUSTER;
+          s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            console.log('Chart.js 3.9.1 loaded');
+            console.log('Chart.js 4.4.7 loaded');
             loadDataLabels();
           };
           document.head.appendChild(s);
@@ -507,9 +507,9 @@ export async function onRequest(context) {
       function loadZoomPlugin() {
         if (typeof ChartZoom === 'undefined') {
           const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
+          s.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js?v=' + CACHE_BUSTER;
           s.onload = function() {
-            console.log('ChartZoom 1.2.1 loaded');
+            console.log('ChartZoom 2.0.1 loaded');
             if (typeof Chart !== 'undefined') {
               Chart.register(ChartZoom);
               console.log('ChartZoom registered');
@@ -527,7 +527,6 @@ export async function onRequest(context) {
       }
 
       function renderChart() {
-        // ★ 正しい構造（pan と zoom を分離）
         historyChartInstance = new Chart(ctx, {
           type: 'line',
           data: {
@@ -620,7 +619,7 @@ export async function onRequest(context) {
                   return value.toFixed(1);
                 }
               },
-              // ★ ここが正しい
+              // ★ Chart.js 4.x + Zoom 2.x 正しい構造
               zoom: {
                 pan: {
                   enabled: true,
@@ -636,7 +635,7 @@ export async function onRequest(context) {
                   },
                   limits: {
                     x: { minRange: 1, max: 16 },
-                    y: { minRange: 5, max: 100 }
+                    y: { minRange: 5, max: 100 }   // ← 縦軸ズーム制限
                   }
                 }
               }
@@ -656,8 +655,8 @@ export async function onRequest(context) {
           },
           plugins: [ChartDataLabels]
         });
-        console.log('Chart rendered with correct zoom structure');
-        console.log('Zoom options:', historyChartInstance.options.plugins.zoom);
+        console.log('Chart rendered with Chart.js 4.x + Zoom 2.x');
+        console.log('Zoom limits:', historyChartInstance.options.plugins.zoom.zoom.limits);
       }
 
       loadLibraries();
