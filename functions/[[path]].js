@@ -578,37 +578,46 @@ export async function onRequest(context) {
       }
     }
 
-    // ========================
-    // イベントリスナー（イベントデリゲーション）
-    // ========================
-    document.addEventListener('click', function(e) {
-      const target = e.target.closest('.char-name');
-      if (target) {
-        e.stopPropagation();
-        const charName = target.textContent.trim();
-        if (charName) {
-          openHistoryModal(charName);
-        }
+   // ========================
+// イベントリスナー（DOMContentLoaded内で直接バインド）
+// ========================
+document.addEventListener('DOMContentLoaded', function() {
+  // ① キャラクター名クリック
+  document.querySelectorAll('.char-name').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var charName = this.textContent.trim();
+      if (charName) {
+        openHistoryModal(charName);
       }
     });
+  });
 
-    document.addEventListener('click', function(e) {
-      if (e.target === document.getElementById('historyModal')) {
+  // ② モーダル背景クリックで閉じる
+  var modal = document.getElementById('historyModal');
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === this) {
         closeHistoryModal();
       }
     });
+  }
 
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        closeHistoryModal();
-      }
+  // ③ 閉じるボタン（×）クリック
+  var closeBtn = document.getElementById('modalClose');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function(e) {
+      closeHistoryModal();
     });
+  }
 
-    document.addEventListener('click', function(e) {
-      if (e.target.id === 'modalClose') {
-        closeHistoryModal();
-      }
-    });
+  // ④ ESCキーで閉じる
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeHistoryModal();
+    }
+  });
+});
   </script>
   `;
 
