@@ -120,7 +120,7 @@ function computeMetaScores(data) {
 }
 
 // ============================================
-// 履歴データ取得API
+// 履歴データ取得API（week_id も返す）
 // ============================================
 async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
   const MAX_WEEKS = 16;
@@ -141,6 +141,7 @@ async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
     if (charData) {
       history.push({
         week: week.name || `#${week.id}`,
+        week_id: week.id,  // ★ 追加：週ID
         win_rate: parseFloat(charData.win_rate) || 0,
         pick_rate: parseFloat(charData.on_rate) || 0,
         ban_rate: parseFloat(charData.ban_rate) || 0,
@@ -149,6 +150,7 @@ async function getCharacterHistory(charName, ttScore, weeks, selectedWeekId) {
     } else {
       history.push({
         week: week.name || `#${week.id}`,
+        week_id: week.id,  // ★ 追加：週ID（データなしでも保持）
         win_rate: null,
         pick_rate: null,
         ban_rate: null,
@@ -326,7 +328,7 @@ export async function onRequest(context) {
   }).join("");
 
   // ============================================
-  // 4グラフ版 exportScript
+  // 4グラフ版 + 横軸クリックで週ジャンプ
   // ============================================
   const exportScript = `
   <script>
@@ -384,7 +386,6 @@ export async function onRequest(context) {
     }
 
     function downloadPNG() {
-      // PNG出力は最初のグラフのみ（またはモーダル全体をキャプチャ）
       const modalContent = document.querySelector('#historyModal .modal-content');
       if (!modalContent) return;
       const script = document.createElement('script');
@@ -411,7 +412,6 @@ export async function onRequest(context) {
       document.head.appendChild(script);
     }
 
-    // 4つのグラフインスタンスを保持
     let chartInstances = { win: null, pick: null, ban: null, meta: null };
     let chartData = {};
 
@@ -427,7 +427,7 @@ export async function onRequest(context) {
       }
 
       modal.style.display = 'block';
-      title.textContent = charName + ' の履歴（過去16週）';
+      title.textContent = charName + ' の履歴（16週）';
       loading.style.display = 'block';
       chartsContainer.style.display = 'none';
 
@@ -451,7 +451,6 @@ export async function onRequest(context) {
     }
 
     function buildHistoryCharts(data, charName) {
-      // 既存のチャートを破棄
       for (let key in chartInstances) {
         if (chartInstances[key]) {
           chartInstances[key].destroy();
@@ -466,23 +465,22 @@ export async function onRequest(context) {
       }
 
       const reversedData = [...filteredData].reverse();
-      const labels = reversedData.map(d => {
-  const parts = d.week.split(' - ');
-  if (parts.length === 2) {
-    // ★ 日付部分（parts[0]）から時刻（" 00:00"）を削除する
-    return parts[0].split(' ')[0].replace(/\\\\/g, '/');
-  }
-  return d.week;
-});
 
-      
+      // ★ 週ID配列（クリック用）
+      const weekIds = reversedData.map(d => d.week_id);
+      const labels = reversedData.map(d => {
+        const parts = d.week.split(' - ');
+        if (parts.length === 2) {
+          return parts[0].split(' ')[0].replace(/\\\\/g, '/');
+        }
+        return d.week;
+      });
 
       const winData = reversedData.map(d => d.win_rate);
       const pickData = reversedData.map(d => d.pick_rate);
       const banData = reversedData.map(d => d.ban_rate);
-      const metaData = reversedData.map(d => d.meta_score); // 生のMETAスコア（100倍済み）
+      const metaData = reversedData.map(d => d.meta_score);
 
-      // 各グラフのY軸範囲を計算
       function getYRange(data, defaultMin, defaultMax, padding) {
         const valid = data.filter(v => v !== null && isFinite(v));
         if (valid.length === 0) return { min: defaultMin, max: defaultMax };
@@ -499,10 +497,8 @@ export async function onRequest(context) {
       const banRange = getYRange(banData, 0, 30, 5);
       const metaRange = getYRange(metaData, -100, 100, 20);
 
-      // チャートの幅
       const baseWidth = Math.max(800, labels.length * 100);
 
-      // 各キャンバスをセットアップ
       const canvasIds = ['winChart', 'pickChart', 'banChart', 'metaChart'];
       const chartTypes = ['win', 'pick', 'ban', 'meta'];
       const colors = ['#7ee787', '#7ab7ff', '#ff7a7a', '#fbbf24'];
@@ -516,7 +512,6 @@ export async function onRequest(context) {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
-        // キャンバスの幅を設定
         canvas.width = baseWidth;
         canvas.style.width = baseWidth + 'px';
         canvas.style.height = '100%';
@@ -538,6 +533,7 @@ export async function onRequest(context) {
           dataset.borderDash = borderDash[index];
         }
 
+        // ★ 横軸クリックで週ジャンプ（onClick を追加）
         const chart = new Chart(ctx, {
           type: 'line',
           data: { labels: labels, datasets: [dataset] },
@@ -585,6 +581,23 @@ export async function onRequest(context) {
                 ticks: { color: '#ffffff' },
                 grid: { color: 'rgba(255,255,255,0.05)' }
               }
+            },
+            // ★ クリックイベント（横軸ラベルをクリックすると週ジャンプ）
+            onClick: function(e) {
+              const xScale = this.scales.x;
+              if (!xScale) return;
+              // クリック位置に対応するラベルのインデックスを取得
+              const xValue = xScale.getValueForPixel(e.x);
+              if (xValue === undefined || xValue === null) return;
+              const index = Math.round(xValue);
+              if (index >= 0 && index < weekIds.length) {
+                const weekId = weekIds[index];
+                if (weekId) {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('week', weekId);
+                  window.location.href = url.toString();
+                }
+              }
             }
           },
           plugins: [ChartDataLabels]
@@ -593,7 +606,6 @@ export async function onRequest(context) {
         chartInstances[chartTypes[index]] = chart;
       }
 
-      // ライブラリ読み込み（Chart.js, DataLabels）のラッパー
       function loadLibraries() {
         if (typeof Chart === 'undefined') {
           const s = document.createElement('script');
@@ -623,17 +635,15 @@ export async function onRequest(context) {
       }
 
       function renderAllCharts() {
-        // 4つのグラフを順に作成
         for (let i = 0; i < 4; i++) {
           loadChart(i);
         }
-        // スクロールラッパーの幅を設定
         const wrapper = document.getElementById('scrollWrapper');
         if (wrapper) {
           wrapper.style.width = baseWidth + 'px';
           wrapper.style.minWidth = '100%';
         }
-        console.log('4 charts rendered');
+        console.log('4 charts rendered with clickable x-axis labels');
       }
 
       loadLibraries();
@@ -891,7 +901,7 @@ button:hover {
   margin: 10px 0 20px;
 }
 
-/* ===== モーダル（縦スクロール対応） ===== */
+/* ===== モーダル ===== */
 #historyModal {
   display: none;
   position: fixed;
@@ -960,6 +970,7 @@ button:hover {
   display: block;
   height: 100%;
   width: 100%;
+  cursor: pointer;  /* ★ クリックできることを示す */
 }
 #historyModal .loading-text {
   text-align: center;
@@ -1041,7 +1052,7 @@ button:hover {
   <div class="footer">META ANALYTICS DASHBOARD</div>
 </div>
 
-<!-- ===== 履歴モーダル（4グラフ） ===== -->
+<!-- ===== モーダル ===== -->
 <div id="historyModal">
   <div class="modal-content">
     <div class="modal-header">
